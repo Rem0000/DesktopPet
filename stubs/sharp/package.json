@@ -1,0 +1,6 @@
+{
+  "name": "sharp",
+  "version": "0.32.0",
+  "description": "Stub sharp for text-only @xenova/transformers in DesktopPet",
+  "main": "index.js"
+}

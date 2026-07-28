@@ -1,0 +1,146 @@
+[
+  {
+    "id": "tool-registry-disable",
+    "category": "tool",
+    "description": "禁用工具后不应进入规划列表",
+    "assert": "tool_disabled"
+  },
+  {
+    "id": "tool-remember-meta",
+    "category": "tool",
+    "description": "记忆工具默认 enabled=safe",
+    "assert": "tool_meta_safe"
+  },
+  {
+    "id": "tool-reminder-meta",
+    "category": "tool",
+    "description": "提醒工具默认注册",
+    "assert": "tool_reminder_registered"
+  },
+  {
+    "id": "tool-search-knowledge-meta",
+    "category": "tool",
+    "description": "search_knowledge 已注册",
+    "assert": "tool_search_knowledge"
+  },
+  {
+    "id": "memory-profile-override",
+    "category": "memory",
+    "description": "同 key profile 覆盖",
+    "assert": "memory_profile_override"
+  },
+  {
+    "id": "memory-retrieve-keyword",
+    "category": "memory",
+    "description": "关键词检索命中橘猫事实",
+    "assert": "memory_retrieve_cat"
+  },
+  {
+    "id": "memory-pin-priority",
+    "category": "memory",
+    "description": "空查询时 pin 优先",
+    "assert": "memory_pin_first"
+  },
+  {
+    "id": "memory-ignore-expired",
+    "category": "memory",
+    "description": "过期 commitment 不进入 active",
+    "assert": "memory_expired"
+  },
+  {
+    "id": "memory-reject-secret",
+    "category": "memory",
+    "description": "拒绝写入疑似密钥",
+    "assert": "memory_reject_secret"
+  },
+  {
+    "id": "rag-import-search",
+    "category": "rag",
+    "description": "导入文档后能检索命中",
+    "assert": "rag_hit"
+  },
+  {
+    "id": "rag-empty-query",
+    "category": "rag",
+    "description": "无关查询返回空",
+    "assert": "rag_miss"
+  },
+  {
+    "id": "rag-delete-cleans",
+    "category": "rag",
+    "description": "删除文档后索引清空",
+    "assert": "rag_delete"
+  },
+  {
+    "id": "rag-memory-isolation",
+    "category": "rag",
+    "description": "清空记忆不影响知识库",
+    "assert": "rag_isolation"
+  },
+  {
+    "id": "rag-reject-pdf",
+    "category": "rag",
+    "description": "拒绝 pdf 导入",
+    "assert": "rag_reject_pdf"
+  },
+  {
+    "id": "obs-redact-key",
+    "category": "tool",
+    "description": "观测摘要遮罩密钥",
+    "assert": "obs_redact"
+  },
+  {
+    "id": "obs-trace-stats",
+    "category": "tool",
+    "description": "trace 汇总成功率",
+    "assert": "obs_stats"
+  },
+  {
+    "id": "memory-no-preference",
+    "category": "memory",
+    "description": "拒绝 preference 写入",
+    "assert": "memory_no_preference"
+  },
+  {
+    "id": "tool-confirm-risk-level",
+    "category": "tool",
+    "description": "confirm 风险等级可读",
+    "assert": "tool_confirm_level"
+  },
+  {
+    "id": "tool-forget-confirm-meta",
+    "category": "tool",
+    "description": "forget_memory 为 confirm",
+    "assert": "tool_forget_confirm_meta"
+  },
+  {
+    "id": "tool-confirm-reject",
+    "category": "tool",
+    "description": "拒绝 confirm 工具不执行副作用",
+    "assert": "tool_confirm_reject"
+  },
+  {
+    "id": "tool-confirm-accept",
+    "category": "tool",
+    "description": "确认后执行 forget_memory",
+    "assert": "tool_confirm_accept"
+  },
+  {
+    "id": "plan-instruction-rag",
+    "category": "tool",
+    "description": "规划提示包含 search_knowledge",
+    "assert": "plan_instruction_rag"
+  },
+  {
+    "id": "rag-citation-shape",
+    "category": "rag",
+    "description": "工具输出可解析为 citation",
+    "assert": "rag_citation"
+  },
+  {
+    "id": "memory-score-keyword",
+    "category": "memory",
+    "description": "相关事实分数高于无关",
+    "assert": "memory_score"
+  }
+]

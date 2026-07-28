@@ -1,0 +1,14 @@
+data/
+node_modules
+dist
+dist-electron
+release
+.DS_Store
+*.log
+.env
+.env.local
+.vscode
+.idea
+layer-packs/**
+!layer-packs/live2d-models/
+!layer-packs/live2d-models/.gitkeep

@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "knowledge": [
+    {
+      "id": "k1",
+      "query": "LangGraph 工具编排",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# DesktopPet\n\n本项目支持 Live2D 导入与 LangGraph Agent 工具编排。\n番茄钟不在本期范围。"
+    },
+    {
+      "id": "k2",
+      "query": "秋招路线 能力",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# 秋招路线\n\n本仓库的秋招智能体路线包含以下能力：\n- 本地知识库 RAG\n- Hybrid 检索"
+    },
+    {
+      "id": "k3",
+      "query": "知识库检索",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# 说明\n\n桌宠支持本地知识库检索增强回答，并展示引用来源。"
+    },
+    {
+      "id": "k4",
+      "query": "RAG 引用溯源",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# RAG\n\nDesktopPet 支持本地知识库 RAG 引用溯源，无命中不编造。"
+    },
+    {
+      "id": "k5",
+      "query": "Live2D 导入",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# Live2D\n\n右键菜单可导入 Live2D 模型文件夹，自动拷贝贴图与动作。"
+    },
+    {
+      "id": "k6",
+      "query": "DeepSeek API Key",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# 聊天\n\nDeepSeek API Key 仅保存在主进程，不会回传到渲染进程。"
+    },
+    {
+      "id": "k7",
+      "query": "工具 trace 可观测",
+      "relevantChunkSuffixes": [":0"],
+      "documentText": "# Agent\n\n工具调用会写入 trace JSONL，便于调试与演示。"
+    },
+    {
+      "id": "k8",
+      "query": "结构感知切块",
+      "relevantChunkSuffixes": [":1"],
+      "documentText": "# 知识库\n\n## 切块\n\n按 Markdown 标题分段，保留 headingPath 元数据。"
+    }
+  ],
+  "memory": [
+    {
+      "id": "m1",
+      "query": "橘猫",
+      "relevantMemoryIds": ["mem1"],
+      "memories": [
+        { "id": "mem1", "content": "养了橘猫豆豆", "importance": 2 },
+        { "id": "mem2", "content": "喜欢徒步", "importance": 2 }
+      ]
+    },
+    {
+      "id": "m2",
+      "query": "咖啡怎么冲",
+      "relevantMemoryIds": ["mem3"],
+      "memories": [
+        { "id": "mem3", "content": "用户喜欢手冲咖啡", "importance": 2 },
+        { "id": "mem4", "content": "用户养了一只猫", "importance": 1 }
+      ]
+    },
+    {
+      "id": "m3",
+      "query": "职业",
+      "relevantMemoryIds": ["mem5"],
+      "memories": [
+        { "id": "mem5", "content": "后端工程师", "key": "user.job", "importance": 3, "type": "profile" },
+        { "id": "mem6", "content": "喜欢猫", "importance": 1 }
+      ]
+    },
+    {
+      "id": "m4",
+      "query": "徒步",
+      "relevantMemoryIds": ["mem7"],
+      "memories": [
+        { "id": "mem7", "content": "周末常去郊外徒步", "importance": 2 },
+        { "id": "mem8", "content": "不喝碳酸饮料", "importance": 1 }
+      ]
+    },
+    {
+      "id": "m5",
+      "query": "昵称",
+      "relevantMemoryIds": ["mem9"],
+      "memories": [
+        { "id": "mem9", "content": "小明", "key": "user.nickname", "importance": 3, "type": "profile" },
+        { "id": "mem10", "content": "喜欢跑步", "importance": 1 }
+      ]
+    },
+    {
+      "id": "m6",
+      "query": "豆豆",
+      "relevantMemoryIds": ["mem11"],
+      "memories": [
+        { "id": "mem11", "content": "宠物猫叫豆豆", "importance": 2 },
+        { "id": "mem12", "content": "住在杭州", "importance": 2 }
+      ]
+    },
+    {
+      "id": "m7",
+      "query": "杭州",
+      "relevantMemoryIds": ["mem13"],
+      "memories": [
+        { "id": "mem13", "content": "用户住在杭州", "importance": 2 },
+        { "id": "mem14", "content": "喜欢篮球", "importance": 1 }
+      ]
+    },
+    {
+      "id": "m8",
+      "query": "篮球",
+      "relevantMemoryIds": ["mem15"],
+      "memories": [
+        { "id": "mem15", "content": "每周打篮球", "importance": 2 },
+        { "id": "mem16", "content": "不吃辣", "importance": 1 }
+      ]
+    }
+  ]
+}

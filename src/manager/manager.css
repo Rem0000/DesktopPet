@@ -1,0 +1,176 @@
+.manager-body {
+  margin: 0;
+  background: #f6f3ef;
+  color: #1e2a32;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  user-select: none;
+}
+
+.manager-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 14px 16px 20px;
+  gap: 12px;
+}
+
+.manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manager-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.manager-header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(30, 42, 50, 0.65);
+}
+
+.manager-error {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fde8e8;
+  color: #8a1f1f;
+  font-size: 12px;
+}
+
+.manager-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  text-align: center;
+  color: rgba(30, 42, 50, 0.55);
+  font-size: 13px;
+  border: 1px dashed rgba(30, 42, 50, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.manager-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manager-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 252, 248, 0.96);
+  border: 1px solid rgba(30, 42, 50, 0.1);
+}
+
+.manager-item.active {
+  border-color: color-mix(in srgb, #2f6fed 45%, rgba(30, 42, 50, 0.12));
+  background: color-mix(in srgb, #2f6fed 8%, #fff);
+}
+
+.manager-item.invalid {
+  opacity: 0.88;
+}
+
+.manager-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.manager-item-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(30, 42, 50, 0.72);
+}
+
+.manager-item-id {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(30, 42, 50, 0.45);
+  word-break: break-all;
+}
+
+.manager-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.manager-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: color-mix(in srgb, #2f6fed 18%, #fff);
+  color: #1a3f8a;
+}
+
+.manager-badge.warn {
+  background: #f7e0c6;
+  color: #7a4a12;
+}
+
+.manager-badge.default {
+  background: #e8f0e4;
+  color: #2d5a32;
+}
+
+.manager-persona-editor {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manager-persona-label {
+  font-size: 12px;
+  color: rgba(30, 42, 50, 0.72);
+}
+
+.manager-persona-textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 42, 50, 0.14);
+  background: #fff;
+  color: #1e2a32;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.manager-persona-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chip.danger {
+  color: #8a1f1f;
+  border-color: color-mix(in srgb, #c44 35%, rgba(30, 42, 50, 0.12));
+  background: #fff5f5;
+}
+
+.manager-app .chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

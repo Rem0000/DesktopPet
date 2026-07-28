@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: pet-asset:; media-src 'self' blob: file: pet-asset:; connect-src 'self' blob: data: file: pet-asset:; worker-src 'self' blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop Pet</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Cubism 4 Core 必须在 pixi-live2d-display/cubism4 模块求值前就绪 -->
+    <script src="/live2d/live2dcubismcore.min.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

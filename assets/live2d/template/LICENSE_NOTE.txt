@@ -1,0 +1,6 @@
+# Live2D template (Haru sample)
+# Source: Live2D CubismWebSamples — Free Material License
+# https://github.com/Live2D/CubismWebSamples
+#
+# Used as default rig for blink / mouth params. Binding a layer-pack
+# replaces texture_00 with the user's cutout (mesh UVs remain Haru's).
