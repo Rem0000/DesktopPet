@@ -1,24 +1,25 @@
 # DesktopPet 简历技术亮点与面试问答
 
 > 目标岗位：**大模型应用 / 智能体（Agent）** · 目标时间：**今年秋招**  
-> 随开发同步维护。OpenSpec 路线：`openspec/changes/agent-platform-resume-track`。  
+> 随开发同步维护。OpenSpec 路线：`agent-platform-resume-track`（Agent 主线）、`novel-writing-studio`（小说工坊）。  
 > TTS/本地音色已调研后搁置（4060 8GB 显存紧张），**本期不作为交付与简历主叙事**。
 
 ## 项目一句话（秋招版）
 
-基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台。
+基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合。
 
 ## 简历包装标题（建议）
 
-**基于 Electron + LangGraph 的桌面智能体系统（工具编排 · 长期记忆 · 本地 RAG）**
+**基于 Electron + LangGraph 的桌面智能体系统（工具编排 · 长期记忆 · 本地 RAG · 长篇叙事工坊）**
 
 ## 简历 Bullets（可直接改写）
 
 1. 独立开发桌面智能体应用：Electron 主进程承载 DeepSeek 流式对话与 LangGraph 图编排（recall → plan → toolBoundary → model → commit），渲染进程多窗口隔离，API Key 仅存主进程 safeStorage。
 2. 设计可扩展 Tool Registry 与白名单工具边界（记忆写入/遗忘、本地提醒、知识库检索），将 Agent 工具调用与本地持久化、桌宠气泡/系统通知联动；并建设工具调用链路可观测（JSONL 耗时/成功率、聊天时间线、入参脱敏）。
 3. 实现分层长期记忆（跨模型共享画像/事实 vs 按模型人设）与 **Hybrid 可检索召回**（BM25 + BGE 向量 + RRF 融合）；落地本地知识库 RAG（Markdown 结构切块、headingPath 元数据、`search_knowledge`、引用溯源）与 20 条离线评测集（工具/记忆/RAG，当前 20/20）。
+4. 设计独立**小说工坊**模块：一书一库 StoryStore（角色/关系/知情差/时间线/伏笔账本），写章流水线 `assemble → draft → StateDiff → Continuity Guard → 人审 Accept`；Accept 才晋升 Canon 并重建书内 Hybrid 索引；复用检索内核但数据路径与聊天记忆/知识库严格隔离；全书预览与 Markdown/HTML/PDF 导出。
 
-> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **20/20** 通过（见 `evals/`）。
+> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **20/20** 通过（见 `evals/`）。第 4 条对应 OpenSpec `novel-writing-studio`（26/26 tasks 已落地）。
 
 ## 离线评测指标（当前）
 
@@ -37,7 +38,7 @@
 | P2 | 7–8 | 本地 md/txt RAG + 引用展示 | 「检索增强与降幻觉」 |
 | P3 | 9–10 | ≥20 条 eval + confirm 闸门 + 敏感遮罩 | 「有指标、有安全边界」 |
 
-当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；TTS 仍搁置。
+当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；`novel-writing-studio` 一期 26/26 已落地；TTS 仍搁置。
 
 ## 技术亮点（可写简历）
 
@@ -166,7 +167,40 @@ query
 **面试可答：**
 - 如何证明改动有效？跑同一 eval 集对比通过率/命中率，而不是只 demo 一次好运。
 
-### 8. Live2D 资源管线与按模型人设（产品壳，辅助故事）
+### 8. 独立小说工坊：长篇叙事状态机（Agent 平台延伸 · 硬核加分）
+
+- **独立窗口与模块**：`novel.html` + `src/novel/` + `electron/novel/`，不挂聊天 LangGraph；复用 DeepSeek Provider 与 Hybrid 检索内核，API Key 仍只在主进程。
+- **一书一库 StoryStore**：`data/novels/<bookId>/` 原子写 JSON + Markdown 正文；结构化实体含 `canon`、`characters`、`relationships`、`knowledge`（知情差）、`timeline`、`promises`（伏笔账本）、章摘要与书内 `index/`。
+- **Accept 才入 Canon**：草稿可多轮修订；仅 Accept 后晋升正文、更新叙事状态、写章摘要并重建书内索引——人审闸门是长篇一致性的产品真相来源，拒绝自动抽取污染 Canon。
+- **写章流水线**（`novelRuntime`）：`assemble`（固定块 ~6k + Hybrid 检索块 ~8k）→ 流式 `draft` → LLM `extractDiff` → `Continuity Guard`（时间矛盾、知情越权、已死角色出场、伏笔提前回收等结构化告警，**不**自动改文）→ UI 展示 Diff/告警 → 用户 Accept/Reject。
+- **固定块 + 检索块上下文**：固定块始终注入本章大纲卡、POV 角色摘要、未回收高优先级伏笔 top-N、上一场结尾钩子、声口样例；检索块走书内 Hybrid 索引召回相关角色/知情/时间线/章摘要/正文片段。
+- **大纲工作流**：AI 生成/整份修订/单章修订；大纲可人工锁定；正文 Accept 若偏离大纲记录 Divergence 笔记，不自动覆盖大纲。
+- **全书预览与导出**：拼接已 Accept 章节为连续稿；按需导出 Markdown / HTML（Word 可开）/ PDF（`printToPDF`），不另存双份正文。
+- **与聊天零耦合**：Accept 章节不写入 `data/memory/` 或 `data/knowledge/`；聊天 Tool Registry 无小说写作工具；15 条单测覆盖隔离、Canon 闸门、StateDiff 规范化、书内索引、稿本导出。
+
+#### 难题场景：LLM 返回 object 形 StateDiff 导致 Accept 崩溃
+
+**Q：写章 Accept 时遇到过什么坑？**
+
+**难题：**  
+LLM 抽取 StateDiff 时常把数组字段写成 `{ "0": {...}, "1": {...} }` 而非 JSON 数组；`applyStateDiff` 里 `for...of` 直接迭代会抛 `object is not iterable`，Accept 整条链路中断。
+
+**怎么解决：**
+
+1. **`normalizeStateDiff`**：入库前统一把 object 形集合 coerce 为数组，并过滤空字段（`novelRuntime.ts`）。
+2. **`applyStateDiff` 数组防护**：即使规范化漏网，迭代前也做 `Array.isArray` 兜底。
+3. **单测回归**：`novelStateDiffNormalize.test.ts` 覆盖畸形 Diff + Accept 全流程。
+
+**面试一句话收束：**  
+「长篇 Agent 不能只靠 prompt——结构化抽取要有 schema 规范化 + Accept 闸门，否则一次 LLM 格式抖动就会永久污染叙事状态。」
+
+**面试可答：**
+- 为什么小说不挂聊天 Agent？上下文预算、工具集、持久化模型完全不同；挂聊天会导致会话污染与记忆串库。
+- 为什么 Accept 才写 Canon？自动抽取必脏；人审是长篇现实向（知情差、声口、时间线）的可维护真相来源。
+- 固定块和检索块怎么分工？固定块保「必须提醒的债」（未回收伏笔、POV、钩子）；检索块补「本章相关的历史」；纯 RAG 抓不住债，纯长上下文会爆预算。
+- 同章号再次 Accept 会怎样？正文/摘要/索引覆盖；叙事状态在旧状态上叠加 Diff，**不会**自动回滚——产品上要提示作者。
+
+### 9. Live2D 资源管线与按模型人设（产品壳，辅助故事）
 - Cubism 2/4 导入、模型库、会话恢复；包级 `persona.md` 热更新。
 - 删模型级联该模型会话；全局记忆保留。
 
@@ -177,21 +211,21 @@ query
 
 我做的是一个 Windows 桌面智能体，不是单纯聊天框。架构上 Electron 主进程跑 DeepSeek 流式调用和 LangGraph 图：先召回人设与长期记忆，再规划工具，经白名单执行后生成回复。  
 工程上我强调三点：第一，工具可注册、可开关，记忆和本地提醒都走同一套边界，并有调用链日志和耗时；第二，用户画像跨角色共享，角色口吻跟人设走、会话按模型隔离，避免串戏；第三，记忆与知识库都走 Hybrid 检索（BM25 + 本地 BGE 向量 + RRF 融合），RAG 带引用溯源，再用离线评测盯工具正确率和检索命中率。  
-整体目标是端侧可控的 Agent 平台：能扩展、能观测、能降幻觉，而不是只调一个 Chat Completions。
+在此基础上我还做了独立小说工坊：把长篇现实向需要的叙事状态（角色、知情差、伏笔账本）外置到 StoryStore，写章走 assemble → draft → StateDiff → Guard → 人审 Accept，Accept 才晋升 Canon，数据和聊天记忆严格隔离——这是把同一套 Agent/检索能力复用到更复杂、更长周期的创作场景。
 
 ## 面试速答（项目级）
 
 **Q：这个项目你负责什么？**  
-A：端到端：桌宠壳、独立聊天窗、主进程 LLM/Agent、分层记忆与工具边界；秋招冲刺聚焦工具平台化、可观测、记忆检索、本地 RAG 与评测安全。
+A：端到端：桌宠壳、独立聊天窗、主进程 LLM/Agent、分层记忆与工具边界；秋招冲刺聚焦工具平台化、可观测、记忆检索、本地 RAG 与评测安全；并扩展独立小说工坊（长篇叙事状态机 + Accept 闸门 + 书内 Hybrid 检索）。
 
 **Q：最大技术难点？**  
-A：多人格下「角色人设 vs 用户记忆」拆分，以及把工具从写死调用升级成可观测、可扩展且默认安全的编排层；再往下是检索预算与引用约束，避免上下文爆炸和假引用。另有一类典型坑：同句多意图时规划只出检索、生成却口头「已记住」——要用 plan/replan/生成三层约束 + 人设边界把假成功堵住（见 §3 难题场景）。
+A：多人格下「角色人设 vs 用户记忆」拆分，以及把工具从写死调用升级成可观测、可扩展且默认安全的编排层；再往下是检索预算与引用约束，避免上下文爆炸和假引用。另有两类典型坑：同句多意图时规划只出检索、生成却口头「已记住」（见 §3）；长篇写作里 LLM StateDiff 格式抖动 + 自动抽取污染 Canon——要靠 Accept 闸门、Diff 规范化与 Continuity Guard 把状态机守住（见 §8）。
 
 **Q：和调 LangChain 模板项目有什么不同？**  
 A：落在真实桌面进程模型（IPC、凭据、多窗、本地调度与通知），有明确白名单与持久化边界，并按秋招标准补齐观测、检索、RAG 与 eval，形成可讲清的工程闭环。
 
 **Q：下一步还做什么？**  
-A：主线已交付（工具平台、Hybrid 检索、confirm 闸门、有限多轮工具、真/假 IR 评测开关、Windows 打包）。后续可选：sqlite-vec 替换 JSON 向量库、助手 Markdown 渲染；TTS 因显存限制继续搁置。
+A：Agent 主线与小说工坊一期均已交付（工具平台、Hybrid 检索、confirm 闸门、Accept 闸门、全书导出）。后续可选：sqlite-vec 替换 JSON 向量库、小说章摘要分层（章→卷）、助手 Markdown 渲染；TTS 因显存限制继续搁置。
 
 ## 维护记录
 
@@ -204,3 +238,5 @@ A：主线已交付（工具平台、Hybrid 检索、confirm 闸门、有限多�
 - 2026-07-27：补充 Hybrid 检索（稀疏+稠密双路召回、RRF、Rerank）面试说明至 §6
 - 2026-07-28：`harden-agent-retrieval-ux`：confirm 闸门、规划可观测、向量批写、多轮工具、真 IR 开关、打包与聊天 UX
 - 2026-07-28：P0 加固「查库+记住」多意图编排：规划并行提示、再规划 MUST 写记忆、生成侧禁止口头已记住；人设/输出规范与 fact 写入边界写清；更新 §3 面试难题场景
+- 2026-07-29：完成 `novel-writing-studio` 一期（独立窗口、StoryStore、写章流水线、Accept 闸门、书内 Hybrid 索引、Continuity Guard、隔离单测）
+- 2026-07-31：小说工坊增强：AI 整份/单章大纲修订、Accept StateDiff 规范化修复、全书预览与 Markdown/HTML/PDF 导出；更新 §8 与简历第 4 条

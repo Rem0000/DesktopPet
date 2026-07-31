@@ -10,6 +10,7 @@ Windows 透明置顶桌宠：**导入完整 Live2D 模型包 + 独立 DeepSeek �
 - Cubism 2 / 4 运行时（Pixi + `live2dcubismcore` / `live2d.min.js`）
 - **独立聊天窗口**：微信式会话列表与气泡对话；DeepSeek 为默认 LLM；API Key 仅保存在主进程
 - **长期记忆**：跨会话共享用户画像/偏好；聊天侧栏可查看、编辑、清空；删除会话不丢画像
+- **小说工坊**（独立窗口）：长篇现实向；AI 大纲 + 人审章；叙事状态与聊天记忆分库（`data/novels/`）；已接受章节可全书预览并导出 Markdown / HTML / PDF
 - 聊天时桌宠会进入思考 / 说话状态（假口型），窗口关闭不影响桌宠与已保存会话
 
 ## 用法
@@ -52,11 +53,14 @@ Windows 透明置顶桌宠：**导入完整 Live2D 模型包 + 独立 DeepSeek �
 | `data/chat/` | 会话与消息 |
 | `data/memory/` | 长期记忆 JSON + 向量索引 |
 | `data/knowledge/` | 知识库源文档、切块索引、向量 |
+| `data/novels/` | 小说工坊：一书一库（大纲/状态/正文/书内索引），与 memory、knowledge 隔离 |
 | `data/traces/` | 工具调用 trace（JSONL） |
 | `data/logs/` | 应用日志 |
 | `data/models/` | BGE-Small-ZH-v1.5 Embedding 权重缓存 |
 | `data/reminders/` | 本地提醒 |
 | `data/config/` | 工具开关等配置 |
+
+小说数据位于 `data/novels/<bookId>/`，每本书独立；Accept 章节不会写入用户聊天记忆，聊天召回也不会读小说正文。
 
 **从旧版迁移**：若你曾在 `%APPDATA%/DesktopPet/`（或 Electron userData）存有聊天/记忆/知识库数据，请手动将对应文件复制到上述 `data/` 子目录后重启应用。本版本**不会**自动迁移。
 

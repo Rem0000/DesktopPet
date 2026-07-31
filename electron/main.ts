@@ -30,12 +30,14 @@ import {
 } from './petAssetProtocol'
 import {
   cascadeDeleteSessionsForPackage,
+  getChatRuntimeProviderConfig,
   initializeChatController,
   setActiveLive2DDirGetter,
   setReminderPresenters,
   startReminderScheduler,
 } from './chat/chatController'
 import type { ChatService } from './chat/chatService'
+import { initializeNovelController } from './novel/novelController'
 import { ensureDataDirs, resolveDataSubpath } from './projectPaths'
 
 registerPetAssetScheme()
@@ -43,6 +45,7 @@ registerPetAssetScheme()
 let mainWindow: BrowserWindow | null = null
 let managerWindow: BrowserWindow | null = null
 let chatWindow: BrowserWindow | null = null
+let novelWindow: BrowserWindow | null = null
 let chatService: ChatService | null = null
 let tray: Tray | null = null
 let clickThrough = false
@@ -253,6 +256,10 @@ function buildPetMenuTemplate(state: PetMenuState = {}): Electron.MenuItemConstr
       label: '聊天',
       click: () => openChatWindow(),
     },
+    {
+      label: '小说工坊',
+      click: () => openNovelWindow(),
+    },
     { type: 'separator' },
     {
       label: '显示 / 隐藏',
@@ -368,6 +375,42 @@ function openChatWindow() {
   chatWindow.on('closed', () => {
     chatService?.cancelForSender(senderId)
     chatWindow = null
+  })
+}
+
+function openNovelWindow() {
+  if (novelWindow && !novelWindow.isDestroyed()) {
+    if (!novelWindow.isVisible()) novelWindow.show()
+    novelWindow.focus()
+    return
+  }
+
+  novelWindow = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 760,
+    minHeight: 520,
+    title: '小说工坊',
+    autoHideMenuBar: true,
+    backgroundColor: '#f7f4ef',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+    void novelWindow.loadURL(
+      `${process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '')}/novel.html`,
+    )
+  } else {
+    void novelWindow.loadFile(path.join(__dirname, '../dist/novel.html'))
+  }
+
+  novelWindow.on('closed', () => {
+    novelWindow = null
   })
 }
 
@@ -640,6 +683,7 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('pet:agent-state', state)
     }
   })
+  await initializeNovelController(() => getChatRuntimeProviderConfig())
   setActiveLive2DDirGetter(() => activeLive2DDir)
   setReminderPresenters({
     presentBubble: presentSpeechBubble,

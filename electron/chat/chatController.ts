@@ -5,6 +5,7 @@ import type {
   MemoryWriteInput,
   PetAgentState,
   ProviderConfigInput,
+  ProviderRuntimeConfig,
   ReminderCreateInput,
   SendChatInput,
   SpeechBubblePayload,
@@ -57,6 +58,11 @@ let getActiveLive2DDir: (() => string | null) | null = null
 let presentBubble: ((payload: SpeechBubblePayload) => void) | null = null
 let isPetWindowVisible: (() => boolean) | null = null
 let notifyReminderSystem: ((title: string, body: string) => void) | null = null
+
+/** 供小说工坊等模块复用同一 Provider 配置（不含回传明文到无关渲染逻辑之外） */
+export function getChatRuntimeProviderConfig(): ProviderRuntimeConfig | null {
+  return chatStoreRef?.getRuntimeProviderConfig() ?? null
+}
 
 export function setActiveLive2DDirGetter(getter: () => string | null): void {
   getActiveLive2DDir = getter

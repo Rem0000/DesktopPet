@@ -319,6 +319,149 @@ const api = {
       ipcRenderer.removeListener('pet:exit-live2d', handler)
     }
   },
+
+  novel: {
+    listBooks: (): Promise<import('../src/novel/contracts').BookShelfItem[]> =>
+      ipcRenderer.invoke('novel:books:list'),
+    createBook: (
+      input: import('../src/novel/contracts').CreateBookInput,
+    ): Promise<import('../src/novel/contracts').BookMeta> =>
+      ipcRenderer.invoke('novel:books:create', input),
+    deleteBook: (bookId: string): Promise<boolean> =>
+      ipcRenderer.invoke('novel:books:delete', bookId),
+    getBook: (bookId: string): Promise<import('../src/novel/contracts').NovelBookSnapshot> =>
+      ipcRenderer.invoke('novel:books:get', bookId),
+    getOutline: (bookId: string): Promise<import('../src/novel/contracts').BookOutline> =>
+      ipcRenderer.invoke('novel:outline:get', bookId),
+    saveOutline: (
+      bookId: string,
+      outline: import('../src/novel/contracts').BookOutline,
+      lock?: boolean,
+    ): Promise<import('../src/novel/contracts').BookOutline> =>
+      ipcRenderer.invoke('novel:outline:save', bookId, outline, lock),
+    generateOutline: (
+      bookId: string,
+      guidance?: string,
+    ): Promise<{
+      draft: import('../src/novel/contracts').BookOutline
+      lockedExisting: boolean
+    }> => ipcRenderer.invoke('novel:outline:generate', bookId, guidance),
+    reviseOutlineChapter: (
+      bookId: string,
+      chapterNumber: number,
+      guidance: string,
+      currentOutline?: import('../src/novel/contracts').BookOutline,
+    ): Promise<import('../src/novel/contracts').OutlineChapterCard> =>
+      ipcRenderer.invoke(
+        'novel:outline:revise-chapter',
+        bookId,
+        chapterNumber,
+        guidance,
+        currentOutline,
+      ),
+    reviseOutline: (
+      bookId: string,
+      guidance: string,
+      currentOutline?: import('../src/novel/contracts').BookOutline,
+    ): Promise<{
+      draft: import('../src/novel/contracts').BookOutline
+      lockedExisting: boolean
+    }> => ipcRenderer.invoke('novel:outline:revise', bookId, guidance, currentOutline),
+    resolveDivergenceRewrite: (
+      bookId: string,
+      divergenceId: string,
+      chapterNumber: number,
+      beatSummary: string,
+    ): Promise<import('../src/novel/contracts').BookOutline> =>
+      ipcRenderer.invoke(
+        'novel:divergence:resolve-rewrite',
+        bookId,
+        divergenceId,
+        chapterNumber,
+        beatSummary,
+      ),
+    assembleChapter: (
+      bookId: string,
+      chapterNumber: number,
+    ): Promise<import('../src/novel/contracts').AssembledChapterContext> =>
+      ipcRenderer.invoke('novel:chapter:assemble', bookId, chapterNumber),
+    writeChapter: (
+      bookId: string,
+      chapterNumber: number,
+      feedback?: string,
+    ): Promise<{ requestId: string }> =>
+      ipcRenderer.invoke('novel:chapter:write', bookId, chapterNumber, feedback),
+    cancelChapter: (requestId: string): Promise<boolean> =>
+      ipcRenderer.invoke('novel:chapter:cancel', requestId),
+    acceptChapter: (
+      input: import('../src/novel/contracts').AcceptChapterInput,
+    ): Promise<{
+      ok: true
+      warnings: import('../src/novel/contracts').GuardWarning[]
+      embeddingOk: boolean
+    }> => ipcRenderer.invoke('novel:chapter:accept', input),
+    rejectChapter: (
+      input: import('../src/novel/contracts').RejectChapterInput,
+    ): Promise<{ ok: true }> => ipcRenderer.invoke('novel:chapter:reject', input),
+    reviseChapter: (
+      input: import('../src/novel/contracts').ReviseChapterInput,
+    ): Promise<{ requestId: string }> =>
+      ipcRenderer.invoke('novel:chapter:revise', input),
+    rebuildIndex: (
+      bookId: string,
+    ): Promise<{ chapters: number; embeddingOk: boolean }> =>
+      ipcRenderer.invoke('novel:index:rebuild', bookId),
+    getEmbeddingStatus: (): Promise<{
+      state: 'idle' | 'loading' | 'ready' | 'error'
+      modelId?: string
+      cacheDir?: string
+      message?: string
+      manualDownloadHint?: string
+    }> => ipcRenderer.invoke('novel:embedding-status'),
+    getManuscript: (
+      bookId: string,
+    ): Promise<import('../src/novel/contracts').NovelManuscript> =>
+      ipcRenderer.invoke('novel:manuscript:get', bookId),
+    exportManuscript: (
+      bookId: string,
+      format: import('../src/novel/contracts').NovelExportFormat,
+    ): Promise<import('../src/novel/contracts').NovelExportResult> =>
+      ipcRenderer.invoke('novel:manuscript:export', bookId, format),
+    upsertCharacter: (
+      bookId: string,
+      character: import('../src/novel/contracts').NovelCharacter,
+    ) => ipcRenderer.invoke('novel:state:upsert-character', bookId, character),
+    saveRelationships: (
+      bookId: string,
+      relationships: import('../src/novel/contracts').RelationshipEdge[],
+    ) => ipcRenderer.invoke('novel:state:save-relationships', bookId, relationships),
+    saveKnowledge: (
+      bookId: string,
+      entries: import('../src/novel/contracts').KnowledgeEntry[],
+    ) => ipcRenderer.invoke('novel:state:save-knowledge', bookId, entries),
+    saveTimeline: (
+      bookId: string,
+      events: import('../src/novel/contracts').TimelineEvent[],
+    ) => ipcRenderer.invoke('novel:state:save-timeline', bookId, events),
+    savePromises: (
+      bookId: string,
+      promises: import('../src/novel/contracts').NarrativePromise[],
+    ) => ipcRenderer.invoke('novel:state:save-promises', bookId, promises),
+    saveCanon: (
+      bookId: string,
+      facts: import('../src/novel/contracts').CanonFact[],
+    ) => ipcRenderer.invoke('novel:state:save-canon', bookId, facts),
+    onStream: (cb: (event: import('../src/novel/contracts').NovelStreamEvent) => void) => {
+      const handler = (
+        _: unknown,
+        event: import('../src/novel/contracts').NovelStreamEvent,
+      ) => cb(event)
+      ipcRenderer.on('novel:stream', handler)
+      return () => {
+        ipcRenderer.removeListener('novel:stream', handler)
+      }
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('petAPI', api)
