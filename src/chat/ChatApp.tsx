@@ -23,6 +23,7 @@ import {
   hydrateToolStateFromTraces,
   type ToolTimelineItem,
 } from './toolTraceHydration'
+import { MarkdownView } from './MarkdownView'
 
 const DEFAULT_CONFIG: ProviderPublicConfig = {
   baseUrl: 'https://api.deepseek.com',
@@ -35,10 +36,56 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function dateGroupLabel(iso: string): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return '更早'
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const day = 86_400_000
+  if (then.getTime() >= startOfToday) return '今天'
+  if (then.getTime() >= startOfToday - day) return '昨天'
+  if (then.getTime() >= startOfToday - 6 * day) return '最近 7 天'
+  return '更早'
+}
+
+/** 宠物/助手头像：优先 modelUrl 图片，失败回退首字符圆形底 */
+function PetAvatar({
+  modelUrl,
+  name,
+  size,
+}: {
+  modelUrl: string | null
+  name: string
+  size?: 'message' | 'header'
+}) {
+  const [failed, setFailed] = useState(false)
+  if (modelUrl && !failed) {
+    return (
+      <span
+        className={`pet-avatar ${size ?? 'message'}${failed ? ' failed' : ''}`}
+        title={name}
+      >
+        {/* pet-asset:// 本地协议贴图，加载失败回退首字符；不设 crossOrigin（该协议下会报错） */}
+        <img src={modelUrl} alt="" draggable={false} onError={() => setFailed(true)} />
+      </span>
+    )
+  }
+  const initial = (name || '宠').trim().charAt(0).toUpperCase()
+  return (
+    <span className={`pet-avatar ${size ?? 'message'} fallback`} title={name}>
+      <span className="avatar-fallback">{initial}</span>
+    </span>
+  )
+}
+
 export function ChatApp() {
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [session, setSession] = useState<ChatSession | null>(null)
   const [packageId, setPackageId] = useState<string | null>(null)
+  /** 当前活跃 Live2D 包的头像信息（modelUrl + 显示名，用于助手头像与头部身份） */
+  const [petProfile, setPetProfile] = useState<{ name: string; modelUrl: string | null } | null>(
+    null,
+  )
   const [input, setInput] = useState('')
   const [activeRequests, setActiveRequests] = useState<Record<string, string>>({})
   const [config, setConfig] = useState(DEFAULT_CONFIG)
@@ -216,6 +263,32 @@ export function ChatApp() {
       setPendingConfirm(request)
     })
   }, [])
+
+  // 活跃包变化时同步头像信息
+  useEffect(() => {
+    if (!packageId) {
+      setPetProfile(null)
+      return
+    }
+    let cancelled = false
+    void window.petAPI
+      .listLive2DLibrary()
+      .then((items) => {
+        if (cancelled) return
+        const active = items.find((item) => item.id === packageId || item.dir === packageId)
+        setPetProfile(
+          active
+            ? { name: active.displayName, modelUrl: active.modelUrl }
+            : { name: packageId, modelUrl: null },
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setPetProfile({ name: packageId, modelUrl: null })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [packageId])
 
   useEffect(() => {
     return window.petAPI.knowledge.onRebuildProgress((progress) => {
@@ -567,25 +640,32 @@ export function ChatApp() {
           </div>
         )}
         <div className="session-list">
-          {sessions.map((item) => (
-            <div
-              key={item.id}
-              className={`session-item ${session?.id === item.id ? 'active' : ''}`}
-            >
-              <button type="button" onClick={() => void openSession(item.id)}>
-                <span>{item.title}</span>
-                <small>{item.messageCount} 条消息</small>
-              </button>
-              <button
-                type="button"
-                className="delete-session"
-                title="删除会话"
-                onClick={() => void removeSession(item.id)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          {sessions.map((item, index) => {
+            const group = dateGroupLabel(item.updatedAt)
+            const prevGroup = index > 0 ? dateGroupLabel(sessions[index - 1]!.updatedAt) : null
+            const showGroup = prevGroup === null || prevGroup !== group
+            return (
+              <div key={item.id}>
+                {showGroup && <div className="session-date-group">{group}</div>}
+                <div
+                  className={`session-item ${session?.id === item.id ? 'active' : ''}`}
+                >
+                  <button type="button" onClick={() => void openSession(item.id)}>
+                    <span>{item.title}</span>
+                    <small>{item.messageCount} 条消息</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-session"
+                    title="删除会话"
+                    onClick={() => void removeSession(item.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
         <div className="sidebar-actions">
           <button
@@ -618,9 +698,14 @@ export function ChatApp() {
 
       <section className="conversation">
         <header className="conversation-header">
-          <div>
-            <strong>{session?.title ?? '桌宠聊天'}</strong>
-            <span>{config.model}</span>
+          <div className="conversation-identity">
+            {petProfile && (
+              <PetAvatar modelUrl={petProfile.modelUrl} name={petProfile.name} size="header" />
+            )}
+            <div className="conversation-identity-text">
+              <strong>{petProfile?.name ?? session?.title ?? '桌宠聊天'}</strong>
+              <span>{config.model}</span>
+            </div>
           </div>
           <span className={`provider-status ${config.hasApiKey ? 'ready' : ''}`}>
             {config.hasApiKey ? 'DeepSeek 已配置' : '需要配置 API Key'}
@@ -659,63 +744,81 @@ export function ChatApp() {
           {initializing ? (
             <div className="empty-chat">正在加载聊天…</div>
           ) : session?.messages.length ? (
-            session.messages.map((message) => {
-              const timeline = toolTimelines[message.id] ?? []
-              const toolsRunning =
-                message.role === 'assistant' &&
-                message.status === 'streaming' &&
-                !message.content &&
-                timeline.some((item) => item.phase === 'start')
-              const placeholder = toolsRunning
-                ? '正在调用工具…'
-                : message.status === 'streaming'
-                  ? '思考中…'
-                  : ''
-              return (
-              <div key={message.id} className={`message-row ${message.role}`}>
-                <div className={`message-bubble ${message.status}`}>
-                  {message.role === 'assistant' && timeline.length > 0 && (
-                      <ToolTimeline
-                        items={timeline}
-                        expanded={expandedTools[message.id] !== false}
+            <div className="message-list-inner">
+              {session.messages.map((message) => {
+                const timeline = toolTimelines[message.id] ?? []
+                const toolsRunning =
+                  message.role === 'assistant' &&
+                  message.status === 'streaming' &&
+                  !message.content &&
+                  timeline.some((item) => item.phase === 'start')
+                const placeholder = toolsRunning
+                  ? '正在调用工具…'
+                  : message.status === 'streaming'
+                    ? '思考中…'
+                    : ''
+                return (
+                <div key={message.id} className={`message-row ${message.role}`}>
+                  {message.role === 'assistant' && petProfile && (
+                    <PetAvatar modelUrl={petProfile.modelUrl} name={petProfile.name} />
+                  )}
+                  <div className={`message-bubble ${message.status}`}>
+                    {message.role === 'assistant' && timeline.length > 0 && (
+                        <ToolTimeline
+                          items={timeline}
+                          expanded={expandedTools[message.id] !== false}
+                          onToggle={() =>
+                            setExpandedTools((current) => ({
+                              ...current,
+                              [message.id]: !(current[message.id] !== false),
+                            }))
+                          }
+                        />
+                      )}
+                    {message.role === 'assistant' &&
+                    message.status !== 'streaming' &&
+                    message.content ? (
+                      <MarkdownView content={message.content} />
+                    ) : (
+                      <div className="message-plain-text">
+                        {message.content || placeholder}
+                        {message.role === 'assistant' &&
+                          message.status === 'streaming' &&
+                          Boolean(message.content) && (
+                            <span className="streaming-caret" aria-hidden="true" />
+                          )}
+                      </div>
+                    )}
+                    {(citationsByMessage[message.id]?.length ?? 0) > 0 && (
+                      <CitationBlock
+                        citations={citationsByMessage[message.id] ?? []}
+                        expanded={Boolean(expandedCitations[message.id])}
                         onToggle={() =>
-                          setExpandedTools((current) => ({
+                          setExpandedCitations((current) => ({
                             ...current,
-                            [message.id]: !(current[message.id] !== false),
+                            [message.id]: !current[message.id],
                           }))
                         }
                       />
                     )}
-                  <div>{message.content || placeholder}</div>
-                  {(citationsByMessage[message.id]?.length ?? 0) > 0 && (
-                    <CitationBlock
-                      citations={citationsByMessage[message.id] ?? []}
-                      expanded={Boolean(expandedCitations[message.id])}
-                      onToggle={() =>
-                        setExpandedCitations((current) => ({
-                          ...current,
-                          [message.id]: !current[message.id],
-                        }))
-                      }
-                    />
-                  )}
-                  {message.status === 'error' && (
-                    <div className="message-error">
-                      {message.error?.message ?? '回复失败'}
-                      {message.error?.retryable && (
-                        <button type="button" onClick={() => retry(message)}>
-                          重试
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {message.status === 'cancelled' && (
-                    <small className="message-state">已停止</small>
-                  )}
+                    {message.status === 'error' && (
+                      <div className="message-error">
+                        {message.error?.message ?? '回复失败'}
+                        {message.error?.retryable && (
+                          <button type="button" onClick={() => retry(message)}>
+                            重试
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {message.status === 'cancelled' && (
+                      <small className="message-state">已停止</small>
+                    )}
+                  </div>
                 </div>
-              </div>
-              )
-            })
+                )
+              })}
+            </div>
           ) : (
             <div className="empty-chat">
               <strong>和桌宠聊点什么吧</strong>
@@ -965,10 +1068,18 @@ function ToolTimeline(props: {
     })
     .join(' · ')
 
+  // 时间线整体状态点：任一运行中 → running；有失败 → fail；否则成功 → ok
+  const running = props.items.some((item) => item.phase === 'start')
+  const hasFail = props.items.some((item) => item.phase === 'end' && !item.ok)
+  const dotClass = running ? 'running' : hasFail ? 'fail' : 'ok'
+
   return (
     <div className="tool-timeline">
       <button type="button" className="tool-timeline-toggle" onClick={props.onToggle}>
-        工具调用 {props.expanded ? '▾' : '▸'} {summary}
+        <span className={`tool-dot ${dotClass}`} aria-hidden="true" />
+        <span>
+          工具调用 {props.expanded ? '▾' : '▸'} {summary}
+        </span>
       </button>
       {props.expanded && (
         <ul className="tool-timeline-list">
