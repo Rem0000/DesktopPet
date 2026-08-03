@@ -1,8 +1,4 @@
-## Purpose
-
-TBD — 按 Live2D 导入包维护可选人设文件，作为该模型聊天时的系统提示词。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Per-package persona file
 系统 SHALL 在每个 Live2D 导入包目录维护可选的人设文件 `persona.md`，其正文作为该模型聊天的**固有角色种子**；每轮有效角色提示 SHALL 由该种子与关系层（关系块 + 已生效演化覆盖，见 pet-relationship-injection / pet-relationship-evolution）合成。
@@ -19,6 +15,8 @@ TBD — 按 Live2D 导入包维护可选人设文件，作为该模型聊天时�
 - **WHEN** 用户更新某包的人设并保存，且该包为当前活跃模型
 - **THEN** 随后一次聊天请求组装的角色提示 MUST 使用更新后的人设正文作为种子，无需重启应用
 
+## ADDED Requirements
+
 ### Requirement: 人设不可被系统自动改写
 系统 MUST NOT 直接改写 persona.md 文件内容；对固有设定的任何调整 MUST 通过演化机制产出候选、经用户审阅接受后以 overlay 覆盖方式注入（见 pet-relationship-evolution）。用户手动编辑 persona.md 的内容 MUST 始终保留并作为后续合成的种子。
 
@@ -33,10 +31,3 @@ TBD — 按 Live2D 导入包维护可选人设文件，作为该模型聊天时�
 #### Scenario: 关系状态重置不影响人设
 - **WHEN** 用户重置或清空关系状态
 - **THEN** persona.md 原文保持原样，不受影响
-
-### Requirement: Manager persona editor
-模型管理窗口 SHALL 为每个已列出的模型提供编辑人设的入口。
-
-#### Scenario: 打开人设编辑
-- **WHEN** 用户选择某模型的人设设置入口
-- **THEN** 系统展示可编辑文本区，并预填该包当前人设（若无则为空）

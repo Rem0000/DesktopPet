@@ -50,7 +50,7 @@
 - **THEN** 注入上下文的条目以检索相关性为主，而不是仅取最近写入的 N 条
 
 ### Requirement: Agent 记忆工具
-系统 SHALL 向 Agent 提供白名单记忆工具 update_profile、remember_fact、forget_memory，并在写入前执行安全校验。系统 MUST NOT 提供 remember_preference。每次聊天请求 SHALL 在回复前由 Provider 规划是否调用这些工具（对话自动写记忆）；若规划失败 MUST NOT 阻断正常回复。当用户要求的是角色口吻或输出规范时，系统 SHALL 提示应写入人设而非记忆库。
+系统 SHALL 向 Agent 提供白名单记忆工具 update_profile、remember_fact、forget_memory，并在写入前执行安全校验。系统 MUST NOT 提供 remember_preference。`forget_memory` MUST 标记为 riskLevel=`confirm`，执行前须经用户确认。每次聊天请求 SHALL 在回复前由 Provider 规划是否调用这些工具（对话自动写记忆）；若规划失败 MUST NOT 阻断正常回复，但 MUST 产生可观测失败信号。当用户要求的是角色口吻或输出规范时，系统 SHALL 提示应写入人设而非记忆库。
 
 #### Scenario: 通过工具更新画像
 - **WHEN** 用户明确表达身份类信息且 Agent 调用 update_profile
@@ -67,6 +67,10 @@
 #### Scenario: 拒绝敏感写入
 - **WHEN** 工具试图写入疑似 API Key、密码或其他敏感机密
 - **THEN** 系统拒绝写入并返回可理解的失败原因
+
+#### Scenario: 遗忘需确认
+- **WHEN** Agent 规划调用 forget_memory 且用户未确认
+- **THEN** 系统 MUST NOT 删除对应记忆条目
 
 ### Requirement: 用户可编辑记忆
 系统 SHALL 提供查看、编辑、删除与清空长期记忆的界面或 IPC 能力，使用户可纠正错误记忆。
@@ -125,3 +129,18 @@
 #### Scenario: 超预算裁剪
 - **WHEN** top-k 记忆文本超过配置预算
 - **THEN** 系统保留更高优先级条目并丢弃其余，且仍保留角色提示与当前用户消息
+
+### Requirement: 关系与记忆隔离
+系统 SHALL 将"关系/好感"类信息与长期记忆（profile/fact/commitment）严格隔离：关系状态 MUST 通过关系模块（`update_relationship` 等）读写，MUST NOT 写入记忆库；记忆条目 MUST NOT 被写入关系状态；关系状态 MUST NOT 作为记忆召回结果注入。模型口吻、称呼、输出规范类请求仍按既有规则路由到人设，关系/好感类意图路由到关系模块而非记忆或人设。
+
+#### Scenario: 关系意图不写记忆
+- **WHEN** 对话中涉及好感增减或关系变化且 Agent 规划写入
+- **THEN** 系统将变更写入关系状态，记忆库条目数与内容不因此改变
+
+#### Scenario: 记忆召回不含关系
+- **WHEN** 某次对话触发记忆召回
+- **THEN** 召回结果不含任何关系状态条目；关系状态仅经关系层注入
+
+#### Scenario: 口吻类仍走人设
+- **WHEN** 用户表达说话方式/称呼/输出规范类偏好
+- **THEN** 系统既不写入记忆也不写入关系状态，仍按既有规则引导其编辑人设
