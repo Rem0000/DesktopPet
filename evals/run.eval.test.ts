@@ -622,6 +622,134 @@ async function runAssert(assert: string): Promise<void> {
         expect(formatted).toContain('search_knowledge：失败')
       })
       return
+    case 'episode_distill_triggered':
+      await withTempDir(async (dir) => {
+        const store = new MemoryStore(dir)
+        await store.initialize()
+        const { EpisodeDistiller } = await import('../electron/chat/episodeDistiller')
+        const distiller = new EpisodeDistiller(
+          store,
+          async () => '{"episodes":[{"content":"用户决定明年考研","importance":3}]}',
+          { version: 1 },
+        )
+        const result = await distiller.maybeDistill({
+          packageId: 'pkg',
+          sessionId: 's1',
+          messages: [
+            {
+              id: '1',
+              sessionId: 's1',
+              role: 'user',
+              content: '我决定明年考研',
+              status: 'complete',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          config: {
+            baseUrl: 'https://api.deepseek.com',
+            model: 'deepseek-chat',
+            apiKey: 'k',
+          },
+          signal: new AbortController().signal,
+        })
+        expect(result.triggered).toBe(true)
+        expect(store.listItems().some((item) => item.type === 'episode')).toBe(true)
+      })
+      return
+    case 'episode_distill_skip':
+      await withTempDir(async (dir) => {
+        const store = new MemoryStore(dir)
+        await store.initialize()
+        const { EpisodeDistiller } = await import('../electron/chat/episodeDistiller')
+        let called = false
+        const distiller = new EpisodeDistiller(
+          store,
+          async () => {
+            called = true
+            return '{"episodes":[]}'
+          },
+          { version: 1 },
+        )
+        const result = await distiller.maybeDistill({
+          packageId: 'pkg',
+          sessionId: 's1',
+          messages: [
+            {
+              id: '1',
+              sessionId: 's1',
+              role: 'user',
+              content: '今天天气不错',
+              status: 'complete',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          config: {
+            baseUrl: 'https://api.deepseek.com',
+            model: 'deepseek-chat',
+            apiKey: 'k',
+          },
+          signal: new AbortController().signal,
+        })
+        expect(result.triggered).toBe(false)
+        expect(called).toBe(false)
+      })
+      return
+    case 'episode_distill_disabled':
+      await withTempDir(async (dir) => {
+        const store = new MemoryStore(dir)
+        await store.initialize()
+        const { EpisodeDistiller } = await import('../electron/chat/episodeDistiller')
+        let called = false
+        const distiller = new EpisodeDistiller(
+          store,
+          async () => {
+            called = true
+            return '{"episodes":[]}'
+          },
+          { version: 1, enabled: false },
+        )
+        await distiller.maybeDistill({
+          packageId: 'pkg',
+          sessionId: 's1',
+          messages: [
+            {
+              id: '1',
+              sessionId: 's1',
+              role: 'user',
+              content: '我决定明年考研',
+              status: 'complete',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          config: {
+            baseUrl: 'https://api.deepseek.com',
+            model: 'deepseek-chat',
+            apiKey: 'k',
+          },
+          signal: new AbortController().signal,
+        })
+        expect(called).toBe(false)
+        expect(store.listItems()).toHaveLength(0)
+      })
+      return
+    case 'importance_trim_priority':
+      await withTempDir(async () => {
+        const { trimContextWeighted } = await import('../electron/chat/messageImportance')
+        const messages = [
+          { id: '1', sessionId: 's', role: 'user', content: 'x'.repeat(20), status: 'complete', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', importance: 1 },
+          { id: '2', sessionId: 's', role: 'user', content: 'y'.repeat(20), status: 'complete', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', importance: 3 },
+          { id: '3', sessionId: 's', role: 'user', content: 'recent-' + 'n'.repeat(20), status: 'complete', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', importance: 2 },
+        ] as const
+        const result = trimContextWeighted(messages as ChatMessage[], 60, { recentWindowChars: 40 })
+        const ids = result.map((item) => item.id)
+        expect(ids).toContain('3')
+        expect(ids).toContain('2')
+        expect(ids).not.toContain('1')
+      })
+      return
     default:
       throw new Error(`未知断言：${assert}`)
   }

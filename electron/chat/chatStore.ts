@@ -56,6 +56,14 @@ function titleFrom(text: string): string {
   return normalized.length > 32 ? `${normalized.slice(0, 32)}…` : normalized
 }
 
+/** 兼容旧消息：缺失 importance 按 2（中）补齐 */
+function normalizeMessage(message: ChatMessage): ChatMessage {
+  if (message.importance === 1 || message.importance === 2 || message.importance === 3) {
+    return message
+  }
+  return { ...message, importance: 2 }
+}
+
 function migrateDatabase(raw: unknown): ChatDatabase {
   if (!raw || typeof raw !== 'object') throw new Error('不支持的聊天数据格式')
   const candidate = raw as Partial<ChatDatabase> & { version?: number }
@@ -75,7 +83,10 @@ function migrateDatabase(raw: unknown): ChatDatabase {
       (session as ChatSession).packageId.trim()
         ? (session as ChatSession).packageId.trim()
         : DEFAULT_LIVE2D_PACKAGE_ID
-    return { ...session, packageId } as ChatSession
+    const messages = Array.isArray((session as ChatSession).messages)
+      ? (session as ChatSession).messages.map(normalizeMessage)
+      : []
+    return { ...session, packageId, messages } as ChatSession
   })
 
   return {
@@ -185,6 +196,7 @@ export class ChatStore {
     role: ChatRole,
     content: string,
     status: ChatMessageStatus = 'complete',
+    importance?: 1 | 2 | 3,
   ): Promise<ChatMessage> {
     return this.mutate(() => {
       const session = this.requireSession(sessionId)
@@ -198,6 +210,7 @@ export class ChatStore {
         createdAt: now,
         updatedAt: now,
       }
+      if (importance === 1 || importance === 2 || importance === 3) message.importance = importance
       session.messages.push(message)
       session.updatedAt = now
       if (role === 'user' && session.messages.filter((item) => item.role === 'user').length === 1) {
@@ -210,7 +223,8 @@ export class ChatStore {
   async updateMessage(
     sessionId: string,
     messageId: string,
-    patch: Pick<ChatMessage, 'content' | 'status'> & Partial<Pick<ChatMessage, 'error'>>,
+    patch: Pick<ChatMessage, 'content' | 'status'> &
+      Partial<Pick<ChatMessage, 'error' | 'importance'>>,
   ): Promise<ChatMessage> {
     return this.mutate(() => {
       const session = this.requireSession(sessionId)
@@ -221,6 +235,9 @@ export class ChatStore {
       message.updatedAt = new Date().toISOString()
       if (patch.error) message.error = patch.error
       else delete message.error
+      if (patch.importance === 1 || patch.importance === 2 || patch.importance === 3) {
+        message.importance = patch.importance
+      }
       session.updatedAt = message.updatedAt
       return clone(message)
     })

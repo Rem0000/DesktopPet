@@ -10,6 +10,7 @@ import type {
 import { isContextDebugEnabled, logContext } from './contextDebug'
 import { embedQuery } from '../retrieval/embeddingService'
 import { hybridSearch } from '../retrieval/hybridSearch'
+import { trimContextWeighted } from './messageImportance'
 import { buildRelationshipLayer } from '../relationship/relationshipRender'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import type { MemoryStore } from './memoryStore'
@@ -553,17 +554,5 @@ function formatMemoryBlock(items: MemoryItem[], maxChars: number): string {
 }
 
 function trimToBudget(messages: ChatMessage[], maxCharacters: number): ChatMessage[] {
-  const eligible = messages.filter(
-    (message) => message.status === 'complete' && message.content.trim(),
-  )
-  const result: ChatMessage[] = []
-  let used = 0
-  for (let index = eligible.length - 1; index >= 0; index -= 1) {
-    const message = eligible[index]
-    if (!message) continue
-    if (result.length > 0 && used + message.content.length > maxCharacters) break
-    result.unshift(message)
-    used += message.content.length
-  }
-  return result
+  return trimContextWeighted(messages, maxCharacters)
 }

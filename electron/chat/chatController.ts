@@ -29,6 +29,8 @@ import { MemoryService } from './memoryService'
 import { MemoryStore } from './memoryStore'
 import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
 import { loadContextConfig } from './contextConfig'
+import { EpisodeDistiller } from './episodeDistiller'
+import { loadEpisodeConfig } from './episodeConfig'
 import { KnowledgeService } from './knowledgeService'
 import { KnowledgeStore } from './knowledgeStore'
 import { HistorySearchService } from './historySearch'
@@ -70,6 +72,10 @@ let notifyReminderSystem: ((title: string, body: string) => void) | null = null
 let evaluationQueue: Promise<void> = Promise.resolve()
 /** 当前排队/进行中的演化评估控制器；新评估会取消上一次，删除包时也会中止 */
 let activeEvaluationController: AbortController | null = null
+/** 串行化 episode 抽取，避免并发双跑 */
+let episodeQueue: Promise<void> = Promise.resolve()
+/** 当前排队/进行中的 episode 抽取控制器；新抽取会取消上一次 */
+let activeEpisodeController: AbortController | null = null
 
 /** 供小说工坊等模块复用同一 Provider 配置（不含回传明文到无关渲染逻辑之外） */
 export function getChatRuntimeProviderConfig(): ProviderRuntimeConfig | null {
@@ -103,7 +109,9 @@ export async function cascadeDeleteSessionsForPackage(packageId: string): Promis
 
 /** 删除模型包时级联清理其关系状态 */
 export async function deleteRelationshipForPackage(packageId: string): Promise<boolean> {
+  // 中止进行中的关系演化评估与 episode 抽取，避免向已删除包继续写入
   activeEvaluationController?.abort()
+  activeEpisodeController?.abort()
   if (!relationshipStoreRef) return true
   return relationshipStoreRef.deletePackage(packageId)
 }
@@ -283,10 +291,19 @@ export async function initializeChatController(
   defaultToolRegistry.applyOverrides(toolOverrides)
 
   // 上下文预算：默认 40k，data/config/context-config.json 可覆盖
-  const { budgetCharacters } = await loadContextConfig(configDir)
+  const { budgetCharacters, importanceTrim, recentWindowChars } =
+    await loadContextConfig(configDir)
 
   const traceStore = new ToolTraceStore(tracesDir)
   await traceStore.initialize()
+
+  const episodeConfig = await loadEpisodeConfig(configDir)
+  const episodeDistiller = new EpisodeDistiller(
+    memoryStore,
+    (system, user, config, signal) =>
+      provider.completeText(system, user, config, signal),
+    episodeConfig,
+  )
 
   void ensureEmbeddingModelLoaded().catch((error) => {
     console.error('[retrieval] embedding model load failed:', error)
@@ -302,6 +319,7 @@ export async function initializeChatController(
       if (tool.name !== 'update_relationship') return true
       return relationshipService.isUpdateAllowed(packageId)
     },
+    { importanceTrim, recentWindowChars },
   )
   const service = new ChatService(
     store,
@@ -335,6 +353,28 @@ export async function initializeChatController(
         })
         .catch(() => {
           if (activeEvaluationController === controller) activeEvaluationController = null
+        })
+      // 对话关键事实自动 episode 沉淀（非阻塞、串行、可取消；失败只日志）
+      const episodeController = new AbortController()
+      activeEpisodeController?.abort()
+      activeEpisodeController = episodeController
+      episodeQueue = episodeQueue
+        .catch(() => undefined)
+        .then(() => {
+          if (episodeController.signal.aborted) return
+          return episodeDistiller.maybeDistill({
+            packageId: options.packageId,
+            sessionId: options.messages.at(-1)?.sessionId ?? '',
+            messages: options.messages,
+            config,
+            signal: episodeController.signal,
+          })
+        })
+        .then(() => {
+          if (activeEpisodeController === episodeController) activeEpisodeController = null
+        })
+        .catch(() => {
+          if (activeEpisodeController === episodeController) activeEpisodeController = null
         })
     },
   )

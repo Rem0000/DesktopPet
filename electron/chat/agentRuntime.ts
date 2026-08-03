@@ -7,6 +7,7 @@ import type {
 } from '../../src/chat/contracts'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import { isContextDebugEnabled, logContext } from './contextDebug'
+import { trimContextWeighted } from './messageImportance'
 import type { MemoryService } from './memoryService'
 import { classifyToolError, summarizeToolInput } from './redact'
 import type { ToolRegistry } from './toolRegistry'
@@ -208,20 +209,12 @@ function filterAlreadySucceededCalls(
   })
 }
 
-export function trimContext(messages: ChatMessage[], maxCharacters = 24_000): ChatMessage[] {
-  const eligible = messages.filter(
-    (message) => message.status === 'complete' && message.content.trim(),
-  )
-  const result: ChatMessage[] = []
-  let used = 0
-  for (let index = eligible.length - 1; index >= 0; index -= 1) {
-    const message = eligible[index]
-    if (!message) continue
-    if (result.length > 0 && used + message.content.length > maxCharacters) break
-    result.unshift(message)
-    used += message.content.length
-  }
-  return result
+export function trimContext(
+  messages: ChatMessage[],
+  maxCharacters = 24_000,
+  options?: { importanceTrim: boolean; recentWindowChars: number },
+): ChatMessage[] {
+  return trimContextWeighted(messages, maxCharacters, options)
 }
 
 function withSourceSession(input: unknown, sessionId: string): unknown {
@@ -368,6 +361,7 @@ export class AgentRuntime {
       tool: AgentTool,
       packageId: string,
     ) => boolean | Promise<boolean>,
+    private readonly trimOptions?: { importanceTrim: boolean; recentWindowChars: number },
   ) {}
 
   async run(input: {
@@ -447,7 +441,7 @@ export class AgentRuntime {
     const graph = new StateGraph(AgentState)
       .addNode('normalize', async (state) => ({
         allMessages: state.messages,
-        messages: trimContext(state.messages, budget),
+        messages: trimContext(state.messages, budget, this.trimOptions),
       }))
       .addNode('recall', async (state) => {
         if (!memory) {

@@ -11,6 +11,8 @@ export type ChatMessage = {
   createdAt: string
   updatedAt: string
   error?: ChatError
+  /** 消息级重要性（1 低 / 2 中 / 3 高）；写入期启发式打分，裁剪时窗口外高重要性优先保留 */
+  importance?: 1 | 2 | 3
 }
 
 export type ChatSession = {
@@ -106,6 +108,29 @@ export type ContextUsage = {
   budgetCharacters: number
   usedCharacters: number
   ratio: number
+}
+
+/** 对话关键事实自动 episode 沉淀配置（data/config/episode-config.json） */
+export type EpisodeConfig = {
+  version: 1
+  enabled?: boolean
+  /** 关键事实意图未命中时，累计未沉淀 complete 用户消息达到该条数才触发抽取 */
+  minMessages?: number
+  /** 距上次成功抽取至少间隔多少条未沉淀消息才再次抽取 */
+  intervalMessages?: number
+  /** 单次抽取最多写入的 episode 条数 */
+  maxEpisodes?: number
+}
+
+/** episode 抽取遥测：观察触发/写入/跳过原因 */
+export type EpisodeDistillEvent = {
+  packageId: string
+  sessionId: string
+  triggered: boolean
+  reason?: string
+  episodesWritten: number
+  totalMessages: number
+  newMessages: number
 }
 
 export type ToolCallPhase = 'start' | 'end'

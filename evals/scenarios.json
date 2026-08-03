@@ -196,5 +196,29 @@
     "category": "context",
     "description": "关闭 RAG 后 search_knowledge 不进入规划且执行被拒",
     "assert": "context_rag_toggle_off"
+  },
+  {
+    "id": "episode-distill-triggered",
+    "category": "memory",
+    "description": "关键事实触发自动 episode 沉淀",
+    "assert": "episode_distill_triggered"
+  },
+  {
+    "id": "episode-distill-skip",
+    "category": "memory",
+    "description": "平凡闲聊不触发 episode 抽取",
+    "assert": "episode_distill_skip"
+  },
+  {
+    "id": "episode-distill-disabled",
+    "category": "memory",
+    "description": "配置关闭后不写入 episode",
+    "assert": "episode_distill_disabled"
+  },
+  {
+    "id": "importance-trim-priority",
+    "category": "context",
+    "description": "超预算时窗口外高重要性消息优先保留",
+    "assert": "importance_trim_priority"
   }
 ]

@@ -11,6 +11,10 @@ const FILE_NAME = 'context-config.json'
 export type ContextConfigFile = {
   version: 1
   budgetCharacters?: number
+  /** 消息级重要性加权裁剪开关（默认 true） */
+  importanceTrim?: boolean
+  /** 逐字保留的近期窗口字符数（默认 0.7·budget） */
+  recentWindowChars?: number
 }
 
 function isConfigFile(value: unknown): value is ContextConfigFile {
@@ -26,22 +30,56 @@ function sanitizeBudget(value: unknown): number | undefined {
   return rounded
 }
 
+function sanitizeRecentWindow(value: unknown, budget: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const rounded = Math.max(1_000, Math.round(value))
+  if (rounded > budget) return undefined
+  return rounded
+}
+
 /** 读取上下文配置；缺失/非法一律回退默认预算，绝不中断聊天 */
 export async function loadContextConfig(
   storageDirectory: string,
-): Promise<{ budgetCharacters: number }> {
+): Promise<{ budgetCharacters: number; importanceTrim: boolean; recentWindowChars: number }> {
   const filePath = path.join(storageDirectory, FILE_NAME)
   try {
     const raw = await readFile(filePath, 'utf8')
     const parsed: unknown = JSON.parse(raw)
-    if (!isConfigFile(parsed)) return { budgetCharacters: DEFAULT_CONTEXT_BUDGET }
+    if (!isConfigFile(parsed)) {
+      const budgetCharacters = DEFAULT_CONTEXT_BUDGET
+      return {
+        budgetCharacters,
+        importanceTrim: true,
+        recentWindowChars: Math.floor(budgetCharacters * 0.7),
+      }
+    }
     const budget = sanitizeBudget(parsed.budgetCharacters)
-    return { budgetCharacters: budget ?? DEFAULT_CONTEXT_BUDGET }
+    const budgetCharacters = budget ?? DEFAULT_CONTEXT_BUDGET
+    const recentWindowChars =
+      sanitizeRecentWindow(parsed.recentWindowChars, budgetCharacters) ??
+      Math.floor(budgetCharacters * 0.7)
+    return {
+      budgetCharacters,
+      importanceTrim: parsed.importanceTrim ?? true,
+      recentWindowChars,
+    }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return { budgetCharacters: DEFAULT_CONTEXT_BUDGET }
+    if (code === 'ENOENT') {
+      const budgetCharacters = DEFAULT_CONTEXT_BUDGET
+      return {
+        budgetCharacters,
+        importanceTrim: true,
+        recentWindowChars: Math.floor(budgetCharacters * 0.7),
+      }
+    }
     // 解析失败也回退默认，不抛出
-    return { budgetCharacters: DEFAULT_CONTEXT_BUDGET }
+    const budgetCharacters = DEFAULT_CONTEXT_BUDGET
+    return {
+      budgetCharacters,
+      importanceTrim: true,
+      recentWindowChars: Math.floor(budgetCharacters * 0.7),
+    }
   }
 }
 

@@ -12,6 +12,7 @@ import type { AgentRuntime, ToolBoundaryEvent } from './agentRuntime'
 import type { ChatStore } from './chatStore'
 import { normalizeProviderError } from './deepSeekProvider'
 import { citationsFromToolOutput } from './knowledgeService'
+import { scoreMessageImportance } from './messageImportance'
 import type { ToolTraceStore } from './toolTraceStore'
 
 export type ChatEventSink = {
@@ -85,7 +86,13 @@ export class ChatService {
       })
     }
 
-    const userMessage = await this.store.appendMessage(sessionId, 'user', text)
+    const userMessage = await this.store.appendMessage(
+      sessionId,
+      'user',
+      text,
+      'complete',
+      scoreMessageImportance(text, 'user'),
+    )
     const assistantMessage = await this.store.appendMessage(
       sessionId,
       'assistant',
@@ -175,6 +182,7 @@ export class ChatService {
   private async execute(active: ActiveRequest): Promise<void> {
     let content = ''
     let startedSpeaking = false
+    let hasToolSuccess = false
     try {
       const session = this.store.getSession(active.sessionId)
       const config = this.store.getRuntimeProviderConfig()
@@ -200,7 +208,10 @@ export class ChatService {
             chunk,
           })
         },
-        onToolEvent: (event) => this.handleToolEvent(active, event),
+        onToolEvent: (event) => {
+          if (event.phase === 'end' && event.ok) hasToolSuccess = true
+          this.handleToolEvent(active, event)
+        },
         confirmTool: active.sender.confirmTool
           ? (toolName, rawInput) => active.sender.confirmTool!(toolName, rawInput)
           : undefined,
@@ -210,7 +221,11 @@ export class ChatService {
       const message = await this.store.updateMessage(
         active.sessionId,
         active.assistantMessageId,
-        { content, status: 'complete' },
+        {
+          content,
+          status: 'complete',
+          importance: scoreMessageImportance(content, 'assistant', { hasToolSuccess }),
+        },
       )
       active.sender.send({
         type: 'complete',
