@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   ChatError,
+  ChatMessage,
   ChatStreamEvent,
   PetAgentState,
   SendChatInput,
@@ -51,6 +52,10 @@ export class ChatService {
     private readonly onPetState: (state: PetAgentState) => void,
     private readonly getActivePackageId: () => string | null = () => null,
     private readonly traces?: ToolTraceStore,
+    private readonly onChatComplete?: (options: {
+      packageId: string
+      messages: ChatMessage[]
+    }) => void,
   ) {}
 
   async send(input: SendChatInput, sender: ChatEventSink): Promise<SendChatResult> {
@@ -212,6 +217,12 @@ export class ChatService {
         requestId: active.requestId,
         sessionId: active.sessionId,
         message,
+      })
+      // 对话完成后触发关系演化评估（非阻塞；失败不影响聊天）
+      const finalSession = this.store.getSession(active.sessionId)
+      this.onChatComplete?.({
+        packageId: session.packageId,
+        messages: finalSession?.messages ?? session.messages,
       })
     } catch (error) {
       const normalized = active.controller.signal.aborted

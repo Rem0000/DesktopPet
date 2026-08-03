@@ -38,6 +38,7 @@ export type DataSubpath =
   | 'reminders'
   | 'config'
   | 'novels'
+  | 'relationships'
 
 /** 运行时持久化数据根目录（默认 <projectRoot>/data/） */
 export function resolveDataRoot(): string {
@@ -66,6 +67,7 @@ const ALL_SUBPATHS: DataSubpath[] = [
   'reminders',
   'config',
   'novels',
+  'relationships',
 ]
 
 /** 确保数据子目录存在 */

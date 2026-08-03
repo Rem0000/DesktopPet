@@ -6,7 +6,7 @@
 
 ## 项目一句话（秋招版）
 
-基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合。
+基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合；另新增**活的关系状态（亲密度）**——好感温度随对话实时增减、三种策略化注入、慢速人审演化，永不改写人设；并落地**分层上下文工程**——滚动会话摘要、可配置上下文预算、包级历史会话按需检索，长对话不再遗忘上文。
 
 ## 简历包装标题（建议）
 
@@ -18,14 +18,16 @@
 2. 设计可扩展 Tool Registry 与白名单工具边界（记忆写入/遗忘、本地提醒、知识库检索），将 Agent 工具调用与本地持久化、桌宠气泡/系统通知联动；并建设工具调用链路可观测（JSONL 耗时/成功率、聊天时间线、入参脱敏）。
 3. 实现分层长期记忆（跨模型共享画像/事实 vs 按模型人设）与 **Hybrid 可检索召回**（BM25 + BGE 向量 + RRF 融合）；落地本地知识库 RAG（Markdown 结构切块、headingPath 元数据、`search_knowledge`、引用溯源）与 20 条离线评测集（工具/记忆/RAG，当前 20/20）。
 4. 设计独立**小说工坊**模块：一书一库 StoryStore（角色/关系/知情差/时间线/伏笔账本），写章流水线 `assemble → draft → StateDiff → Continuity Guard → 人审 Accept`；Accept 才晋升 Canon 并重建书内 Hybrid 索引；复用检索内核但数据路径与聊天记忆/知识库严格隔离；全书预览与 Markdown/HTML/PDF 导出。
+5. 实现**活的关系状态（亲密度）**：按模型包隔离持久化好感温度（0–100 五段关系阶段）、`update_relationship` 白名单工具按对话实时增减（±10 clamp、人设优先冻结）、`MemoryService.assemble` 分层注入（persona 不可变种子 + 关系块 + 演化覆盖）、**慢速人审演化**（阈值+事件驱动反思 → 候选 → 人审接受才生效，永不改写 persona.md），与记忆/小说零耦合。
+6. 实现**分层上下文工程**：修复长对话"忘上文"——会话摘要改为基于**裁剪前完整历史**的滚动摘要（`coveredUntilMessageId` 增量推进）、上下文预算 24k→40k 且 `data/config/` 可配置、新增 `search_history` 工具按需检索当前包**全部历史会话**原话（BM25-only、带出处、窄触发）、上下文占用水位可观测。
 
-> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **20/20** 通过（见 `evals/`）。第 4 条对应 OpenSpec `novel-writing-studio`（26/26 tasks 已落地）。
+> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **32/32** 通过（见 `evals/`）。第 4 条对应 OpenSpec `novel-writing-studio`（26/26 tasks 已落地）。第 5 条对应 `living-pet-relationship`（36/36 tasks 已落地，详见 §10）。第 6 条对应 `context-management-strategy`，详见 §11。
 
 ## 离线评测指标（当前）
 
 | 集合 | 场景数 | 通过 | 覆盖 |
 |------|--------|------|------|
-| `evals/scenarios.json` | 20 | 20 | 工具开关/观测脱敏、记忆检索与安全写入、RAG 命中/隔离/引用 |
+| `evals/scenarios.json` | 33 | 33 | 工具开关/观测脱敏、记忆检索与安全写入、RAG 命中/隔离/引用、关系路由/分层渲染/记忆隔离/人设优先拦截、历史会话检索/摘要触发/RAG 开关 |
 
 运行：`npm test -- --run evals/run.eval.test.ts`
 
@@ -38,7 +40,7 @@
 | P2 | 7–8 | 本地 md/txt RAG + 引用展示 | 「检索增强与降幻觉」 |
 | P3 | 9–10 | ≥20 条 eval + confirm 闸门 + 敏感遮罩 | 「有指标、有安全边界」 |
 
-当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；`novel-writing-studio` 一期 26/26 已落地；TTS 仍搁置。
+当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；`novel-writing-studio` 一期 26/26、`living-pet-relationship` 36/36、`context-management-strategy` 已落地；TTS 仍搁置。长对话上下文遗忘已修复（见 §11 与文末「已知问题与待办」）。
 
 ## 技术亮点（可写简历）
 
@@ -207,11 +209,60 @@ LLM 抽取 StateDiff 时常把数组字段写成 `{ "0": {...}, "1": {...} }` �
 **面试可答：**
 - 为什么会话必须绑模型？避免「前半段角色 A、后半段角色 B」混聊导致摘要与召回串味。
 
+### 10. 活的关系状态：好感温度 + 慢速人审演化（产品级亮点）
+
+- **按包关系状态**：`data/relationships/<packageId>.json` 单文件原子写（复用 `fsAtomic` + 串行读改写队列），含 `policy`（layered / persona-first / dynamic-first）、好感温度 `affinity`（0–100）、关系阶段 `stage`（stranger→acquaintance→friendly→close→intimate，阈值 0/30/50/70/90）、当下态度 `temperatureNote`、演化提案与 `history`；缺文件旧包按默认初始化，删 Live2D 包级联清理。
+- **分轴语义**：关系标签（"谁是你"，来自 persona canon）与好感温度（"现在怎么对你"，动态层）两条轴表达为「底子是 X、当下是 Y」，模型在看似冲突时（人设写"生死之交"但刚认识）仍自洽理解；阶段内按好感进度回退三档默认态度描述（低/中/高）。
+- **注入层唯一入口**：`MemoryService.assemble` 合成「persona 不可变种子 + 关系块（policy 渲染）+ 已生效演化覆盖 + 记忆块 + 摘要块」；三 policy 共用同一底层状态，仅 `renderRelationshipBlock` 纯函数不同，切换零状态迁移、下轮生效。
+- **`update_relationship` 白名单工具**：模型在规划轮主动写好感 ±（单次 clamp ±10、note ≤120 字），`hasRelationshipIntent` 意图路由 + `formatToolResultsForModel` 硬约束（禁止声称写了好感但未写）；**persona-first 下冻结**——不进规划集合 + 执行拦截返回 `persona_first_policy`。
+- **慢速演化 = 人审 overlay（复刻小说 Accept 闸门）**：事件驱动非阻塞评估，闸门 = affinity≥60 + 距上次评估 ≥1 天 + 每 7 天 ≤1 条生效；反思 LLM（persona 原文 + 近 40 条对话证据 → `{personaQuote, change, evidence}`）产出 `proposed` 候选 → 面板人审接受才 `applied`，以「过去→现在」句式 overlay 注入；**永不改写 persona.md**。
+- **关系面板**：模型管理窗内查看/手工修正/重置、三 policy 通俗卡片、演化审阅；IPC `relationship:*` 命名空间；与记忆/小说零耦合。
+- **测试**：36 条单测（store/evaluator/render/service/agentRuntime 路由）+ 4 条 eval 场景（工具注册、分层渲染、记忆隔离、人设优先拦截），离线 eval 累计 **28/28**。
+
+#### 难题场景：persona-first 下为什么「规划过滤 + 执行拦截」双保险
+
+**Q：关系策略切到"人设优先"时，遇到过什么问题？**
+
+**难题：**  
+persona-first 的语义是"关系以人设既定设定为准"。若只做渲染差异、仍让对话自由增减好感，用户提前写好的高亲密人设会**带偏好感信号**——本不该加分的不合适对话也会被"人设影响下的亲近感"触发加分，形成**反馈污染**：状态越暖 → 渲染越亲 → 模型越容易加分，恶性循环，且用户无从干预。
+
+**怎么解决：**
+1. **规划过滤**：`AgentRuntime.planToolFilter` 在 policy=persona-first 时把 `update_relationship` 移出模型可选工具集（`chatController.ts` 注入）。
+2. **执行拦截**：即使外部构造 pendingToolCalls 绕过规划，工具执行仍返回 `persona_first_policy` 失败，好感与历史不变。
+3. **恢复**：切回 layered / dynamic-first 后自动恢复自动调整；冻结期好感仅允许面板手工修正/重置改变。
+
+**面试一句话收束：**  
+「关系是『动态信号 + 人设 canon』的合成物；当策略声明『人设优先』时，规划与执行两条写入路径都要堵死，否则近因效应会让状态自我强化。」
+
+### 11. 分层上下文工程：滚动摘要 + 包级历史检索（核心叙事）
+
+- **四层上下文架构**（对齐 Claude Code 的做法）：Level 0 系统提示（人设 + 关系层，恒在）→ Level 1 可检索长期记忆（按需 Hybrid 召回）→ Level 2 滚动会话摘要（压缩早期轮次）→ Level 3 近期原文（逐字窗口）；另加 **Level 2.5** `search_history` 包级历史检索作为压缩摘要的逐字兜底。
+- **修通滚动会话摘要**：原实现 `ensureSessionSummary` 的触发判断（`total > budget`）发生在 `normalize` 裁剪**之后**，收到的消息恒 ≤24k，摘要几乎从不生成——超预算早期对话被静默丢弃。修复：`AgentRuntime` 图状态增 `allMessages`（裁剪前完整历史），`recall` 用完整历史调 `assemble` 生成摘要；`coveredUntilMessageId` 增量推进，仅当被挤出窗口的早期边界前进才重摘要；`provider.summarize` 改 head+tail 采样避免只概括最开头；失败回退要点列表、不阻断回复。
+- **上下文预算可配置**：默认 24k→40k 字符（仍远小于 DeepSeek 64k token 上限），`data/config/context-config.json` 可覆盖（非法值回退默认）；长期记忆/摘要/近期窗口按比例共享预算。
+- **`search_history` 工具（包级全量）**：按需检索**当前活跃包全部历史会话**的已提交消息原话；仅 BM25（复用检索内核的稀疏路，**不依赖向量 Embedding**，Embedding 挂了仍可用）；结果带出处（会话/时间/角色/excerpt/score）；`formatToolResultsForModel` 硬约束——有命中必须逐字引用、无命中禁止编造；规划提示窄触发（仅用户引用更早对话且上下文缺细节时调用）、单发不进二次规划。
+- **上下文占用可观测**：`chat:context:usage` IPC 暴露 budget/used/ratio，聊天窗展示 "上下文 X%" 占用水位，>90% 警示。
+- **RAG 检索开关**：知识库面板一键开关对话内知识库检索（关闭后 `search_knowledge` 不进入规划、执行被拒），减少无关场景下检索内容占用上下文；持久化于 `tool-config.json`，不影响长期记忆召回与 `search_history`。
+
+#### 难题场景：会话摘要的触发条件为什么"死"了
+
+**Q：你修复长对话遗忘时，遇到的根因是什么？**
+
+**难题：**  
+代码里明明有会话摘要机制，但长对话就是不生成摘要。排查发现：摘要的触发判断 `total > budget` 在 `normalize` 节点**先把消息裁到 ≤24k 之后**才执行，收到的消息总量恒 ≤ 预算，判断永远不成立——摘要路径是死的，超预算的早期对话被 `trimContext` 整条丢弃、且无任何压缩兜底。这在单测里测不出来（测试直接调 `assemble` 传完整历史），真实图里永远走不到。
+
+**怎么解决：**
+1. 图状态增加 `allMessages`（裁剪前完整历史），`recall` 用完整历史生成摘要、用裁剪结果做可见窗口——职责分离。
+2. 摘要按 `coveredUntilMessageId` 增量推进，避免每次全量重概括；`provider.summarize` 输入改 head+tail 采样。
+3. 补一条"通过 AgentRuntime 跑长历史"的回归单测 + eval 场景，锁住"图内真实路径能触发摘要"。
+
+**面试一句话收束：**  
+「上下文压缩必须基于**裁剪前的完整历史**触发；把『裁剪』放在『摘要判断』之前，会让压缩机制在真实调用路径里静默失效——这种 bug 要靠端到端路径的回归测试才能拦住。」
+
 ## 3 分钟面试陈述稿（可背）
 
 我做的是一个 Windows 桌面智能体，不是单纯聊天框。架构上 Electron 主进程跑 DeepSeek 流式调用和 LangGraph 图：先召回人设与长期记忆，再规划工具，经白名单执行后生成回复。  
 工程上我强调三点：第一，工具可注册、可开关，记忆和本地提醒都走同一套边界，并有调用链日志和耗时；第二，用户画像跨角色共享，角色口吻跟人设走、会话按模型隔离，避免串戏；第三，记忆与知识库都走 Hybrid 检索（BM25 + 本地 BGE 向量 + RRF 融合），RAG 带引用溯源，再用离线评测盯工具正确率和检索命中率。  
-在此基础上我还做了独立小说工坊：把长篇现实向需要的叙事状态（角色、知情差、伏笔账本）外置到 StoryStore，写章走 assemble → draft → StateDiff → Guard → 人审 Accept，Accept 才晋升 Canon，数据和聊天记忆严格隔离——这是把同一套 Agent/检索能力复用到更复杂、更长周期的创作场景。
+在此基础上我还做了独立小说工坊：把长篇现实向需要的叙事状态（角色、知情差、伏笔账本）外置到 StoryStore，写章走 assemble → draft → StateDiff → Guard → 人审 Accept，Accept 才晋升 Canon，数据和聊天记忆严格隔离——这是把同一套 Agent/检索能力复用到更复杂、更长周期的创作场景。还给桌宠本体加了**活的关系状态**：好感温度随对话实时增减、三种策略化注入、固有设定的慢速演化经人审才生效——让角色会成长，而人设文件始终是用户手写、系统永不改写的 canon。
 
 ## 面试速答（项目级）
 
@@ -225,7 +276,28 @@ A：多人格下「角色人设 vs 用户记忆」拆分，以及把工具从写
 A：落在真实桌面进程模型（IPC、凭据、多窗、本地调度与通知），有明确白名单与持久化边界，并按秋招标准补齐观测、检索、RAG 与 eval，形成可讲清的工程闭环。
 
 **Q：下一步还做什么？**  
-A：Agent 主线与小说工坊一期均已交付（工具平台、Hybrid 检索、confirm 闸门、Accept 闸门、全书导出）。后续可选：sqlite-vec 替换 JSON 向量库、小说章摘要分层（章→卷）、助手 Markdown 渲染；TTS 因显存限制继续搁置。
+A：Agent 主线、小说工坊一期、活的关系状态与分层上下文工程均已交付（工具平台、Hybrid 检索、confirm 闸门、Accept 闸门、全书导出、好感/演化人审、滚动会话摘要、`search_history` 包级历史检索）。长对话上下文遗忘已修复（见 §11）。后续可选：对话关键事实自动 episode 沉淀、消息级重要性加权裁剪、sqlite-vec 替换 JSON 向量库、小说章摘要分层（章→卷）、助手 Markdown 渲染；TTS 因显存限制继续搁置。
+
+## 已知问题与待办（持续更新）
+
+### 长对话上下文遗忘（2026-08-02 诊断 → 已修复）
+
+**现象：** 对话较长时模型回复会"忘记上文"，早前轮次的内容无任何痕迹。
+
+**根因（`electron/chat/` 上下文组装管线）：**
+1. `normalize` 节点把全量会话裁到 **24k 字符**（`agentRuntime.ts:trimContext`），最老的整条轮次被直接丢弃——模型根本没收到，且无压缩兜底。
+2. **会话摘要触发条件实际永不成立（关键 bug）**：`ensureSessionSummary` 的 `total > budget` 判断发生在 `normalize` 裁剪之后（`recall` 传入的是已裁到 ≤24k 的消息，总量恒 ≤ 24k），摘要几乎从不生成——长对话既不保留原文、也不生成摘要，超预算部分"凭空消失"。
+3. 对话轮次不会自动进长期记忆；`recall` 只检索模型显式写入的 `remember_fact`/`update_profile` 条目。
+4. 记忆块（18%）与摘要块（12%）挤占同一预算（`memoryService.ts`），可见对话窗口进一步被压到 ~1.6 万字符。
+
+**修复（`context-management-strategy`，2026-08-02 落地）：**
+- ✅ 图状态增 `allMessages`，会话摘要改为基于**裁剪前完整历史**的滚动摘要（`coveredUntilMessageId` 增量推进），替代静默丢弃
+- ✅ 上下文预算 24k→40k，`data/config/context-config.json` 可配置
+- ✅ 新增 `search_history` 工具（BM25-only、包级全量、带出处、窄触发、硬约束），作为压缩摘要的逐字兜底
+- ✅ 上下文占用水位可观测（IPC + 聊天窗指示）
+- ✅ RAG 检索开关：知识库面板一键关闭对话内知识库检索，减少无关上下文占用（不影响记忆与历史检索）
+- ✅ 回归单测 + 5 条 eval 场景，离线 eval **33/33**
+- 未做（另行立项）：对话关键事实自动 episode 沉淀到长期记忆、消息级重要性加权裁剪
 
 ## 维护记录
 
@@ -240,3 +312,6 @@ A：Agent 主线与小说工坊一期均已交付（工具平台、Hybrid 检索
 - 2026-07-28：P0 加固「查库+记住」多意图编排：规划并行提示、再规划 MUST 写记忆、生成侧禁止口头已记住；人设/输出规范与 fact 写入边界写清；更新 §3 面试难题场景
 - 2026-07-29：完成 `novel-writing-studio` 一期（独立窗口、StoryStore、写章流水线、Accept 闸门、书内 Hybrid 索引、Continuity Guard、隔离单测）
 - 2026-07-31：小说工坊增强：AI 整份/单章大纲修订、Accept StateDiff 规范化修复、全书预览与 Markdown/HTML/PDF 导出；更新 §8 与简历第 4 条
+- 2026-08-01：完成 `living-pet-relationship`（活的关系状态）：好感温度 0–100 + 五段阶段、`update_relationship` 工具与意图路由、policy 三模式注入、慢速人审演化、关系面板；与记忆/小说零耦合，36 单测 + 4 eval
+- 2026-08-02：归档 `harden-agent-retrieval-ux` / `novel-writing-studio` / `living-pet-relationship` 并同步主规格（新增 10 个 capability，specs 28 通过）；诊断出长对话上下文遗忘问题（会话摘要触发失效 + 24k 字符硬裁）
+- 2026-08-02：完成 `context-management-strategy`（分层上下文工程）：会话摘要改为基于裁剪前完整历史的滚动摘要、预算 24k→40k 可配置、`search_history` 包级 BM25 历史检索、上下文占用水位可观测、RAG 检索开关；长对话上下文遗忘修复，eval 33/33；更新 §11 与简历第 6 条

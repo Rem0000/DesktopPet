@@ -27,12 +27,18 @@ import { ChatStore } from './chatStore'
 import { DeepSeekProvider, validateProviderConfig } from './deepSeekProvider'
 import { MemoryService } from './memoryService'
 import { MemoryStore } from './memoryStore'
-import { loadToolConfigOverrides } from './toolConfig'
+import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
+import { loadContextConfig } from './contextConfig'
 import { KnowledgeService } from './knowledgeService'
 import { KnowledgeStore } from './knowledgeStore'
+import { HistorySearchService } from './historySearch'
 import { summarizeToolInput } from './redact'
 import { defaultToolRegistry } from './toolRegistry'
 import { ToolTraceStore } from './toolTraceStore'
+import { RelationshipEvaluator } from '../relationship/relationshipEvaluator'
+import { initializeRelationshipController } from '../relationship/relationshipController'
+import { RelationshipService } from '../relationship/relationshipService'
+import { RelationshipStore } from '../relationship/relationshipStore'
 
 const TOOL_CONFIRM_TIMEOUT_MS = 60_000
 
@@ -54,10 +60,16 @@ function resolveToolConfirm(confirmId: string, confirmed: boolean): void {
 let chatStoreRef: ChatStore | null = null
 let memoryStoreRef: MemoryStore | null = null
 let reminderSchedulerRef: ReminderScheduler | null = null
+let relationshipStoreRef: RelationshipStore | null = null
+let relationshipEvaluatorRef: RelationshipEvaluator | null = null
 let getActiveLive2DDir: (() => string | null) | null = null
 let presentBubble: ((payload: SpeechBubblePayload) => void) | null = null
 let isPetWindowVisible: (() => boolean) | null = null
 let notifyReminderSystem: ((title: string, body: string) => void) | null = null
+/** 串行化演化评估，避免并发双跑 */
+let evaluationQueue: Promise<void> = Promise.resolve()
+/** 当前排队/进行中的演化评估控制器；新评估会取消上一次，删除包时也会中止 */
+let activeEvaluationController: AbortController | null = null
 
 /** 供小说工坊等模块复用同一 Provider 配置（不含回传明文到无关渲染逻辑之外） */
 export function getChatRuntimeProviderConfig(): ProviderRuntimeConfig | null {
@@ -86,6 +98,14 @@ export async function cascadeDeleteSessionsForPackage(packageId: string): Promis
   if (!chatStoreRef || !memoryStoreRef) return
   const removed = await chatStoreRef.deleteSessionsByPackageId(packageId)
   await memoryStoreRef.deleteSessionSummaries(removed)
+  await deleteRelationshipForPackage(packageId)
+}
+
+/** 删除模型包时级联清理其关系状态 */
+export async function deleteRelationshipForPackage(packageId: string): Promise<boolean> {
+  activeEvaluationController?.abort()
+  if (!relationshipStoreRef) return true
+  return relationshipStoreRef.deletePackage(packageId)
 }
 
 function requireId(value: unknown, label: string): string {
@@ -202,11 +222,30 @@ export async function initializeChatController(
   chatStoreRef = store
   memoryStoreRef = memoryStore
   const provider = new DeepSeekProvider()
+
+  const relationshipStore = new RelationshipStore(resolveDataSubpath('relationships'))
+  await relationshipStore.initialize()
+  relationshipStoreRef = relationshipStore
+  const relationshipService = new RelationshipService(
+    relationshipStore,
+    defaultToolRegistry,
+    () => resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
+  )
+  relationshipService.registerDefaultTools()
+  const relationshipEvaluator = new RelationshipEvaluator(
+    relationshipStore,
+    (system, user, config, signal) =>
+      provider.completeText(system, user, config, signal),
+  )
+  relationshipEvaluatorRef = relationshipEvaluator
+  initializeRelationshipController(relationshipService)
+
   const memoryService = new MemoryService(
     memoryStore,
     defaultToolRegistry,
     (messages, config, signal) => provider.summarize(messages, config, signal),
     readPackagePersona,
+    (packageId) => relationshipService.readState(packageId),
   )
   memoryService.registerDefaultTools()
 
@@ -233,8 +272,18 @@ export async function initializeChatController(
   const knowledgeService = new KnowledgeService(knowledgeStore, defaultToolRegistry)
   knowledgeService.registerDefaultTools()
 
+  const historySearchService = new HistorySearchService(
+    store,
+    defaultToolRegistry,
+    () => resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
+  )
+  historySearchService.registerDefaultTools()
+
   const toolOverrides = await loadToolConfigOverrides(configDir)
   defaultToolRegistry.applyOverrides(toolOverrides)
+
+  // 上下文预算：默认 40k，data/config/context-config.json 可覆盖
+  const { budgetCharacters } = await loadContextConfig(configDir)
 
   const traceStore = new ToolTraceStore(tracesDir)
   await traceStore.initialize()
@@ -243,13 +292,51 @@ export async function initializeChatController(
     console.error('[retrieval] embedding model load failed:', error)
   })
 
-  const runtime = new AgentRuntime(provider, defaultToolRegistry, memoryService)
+  const runtime = new AgentRuntime(
+    provider,
+    defaultToolRegistry,
+    memoryService,
+    budgetCharacters,
+    (tool, packageId) => {
+      // 人设优先策略下不向模型开放 update_relationship，好感不随对话调整
+      if (tool.name !== 'update_relationship') return true
+      return relationshipService.isUpdateAllowed(packageId)
+    },
+  )
   const service = new ChatService(
     store,
     runtime,
     onPetState,
     () => resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
     traceStore,
+    (options) => {
+      const evaluator = relationshipEvaluatorRef
+      const config = store.getRuntimeProviderConfig()
+      if (!evaluator || !config) return
+      // 非阻塞排队评估：失败/取消不影响聊天。
+      // 持有 AbortController 供后续排队时取消上一次，以及删除包时终止未完成的评估。
+      const controller = new AbortController()
+      activeEvaluationController?.abort()
+      activeEvaluationController = controller
+      evaluationQueue = evaluationQueue
+        .catch(() => undefined)
+        .then(() => {
+          if (controller.signal.aborted) return
+          return evaluator.maybeEvaluate({
+            packageId: options.packageId,
+            persona: readPackagePersona(options.packageId),
+            messages: options.messages,
+            config,
+            signal: controller.signal,
+          })
+        })
+        .then(() => {
+          if (activeEvaluationController === controller) activeEvaluationController = null
+        })
+        .catch(() => {
+          if (activeEvaluationController === controller) activeEvaluationController = null
+        })
+    },
   )
 
   ipcMain.handle('chat:config:get', () => store.getProviderConfig())
@@ -275,6 +362,7 @@ export async function initializeChatController(
   ipcMain.handle('chat:active-package-id', () =>
     resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
   )
+  ipcMain.handle('chat:context:usage', () => runtime.lastContextUsage ?? null)
   ipcMain.handle('chat:send', async (event, raw: unknown) => {
     try {
       return await service.send(requireSendInput(raw), {
@@ -400,6 +488,24 @@ export async function initializeChatController(
   })
   ipcMain.handle('retrieval:model-status', () => getEmbeddingModelStatus())
   ipcMain.handle('retrieval:retry-model', async () => retryEmbeddingModelLoad())
+
+  // RAG 检索开关：关闭后 search_knowledge 不进入规划、对话不进行知识库检索（减少无关上下文占用）
+  const readRagEnabled = async (): Promise<{ enabled: boolean }> => {
+    const overrides = await loadToolConfigOverrides(configDir)
+    return { enabled: overrides.search_knowledge?.enabled ?? true }
+  }
+  const writeRagEnabled = async (enabled: boolean): Promise<{ enabled: boolean }> => {
+    const overrides = await loadToolConfigOverrides(configDir)
+    overrides.search_knowledge = { enabled }
+    await saveToolConfigOverrides(configDir, overrides)
+    defaultToolRegistry.applyOverrides(overrides)
+    return { enabled }
+  }
+  ipcMain.handle('chat:rag:get', () => readRagEnabled())
+  ipcMain.handle('chat:rag:set', (_event, raw: unknown) => {
+    if (typeof raw !== 'boolean') throw new Error('RAG 开关参数无效')
+    return writeRagEnabled(raw)
+  })
 
   return service
 }

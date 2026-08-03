@@ -9,9 +9,28 @@
 .manager-app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  box-sizing: border-box;
   padding: 14px 16px 20px;
   gap: 12px;
+  overflow-y: auto;
+}
+
+.manager-app::-webkit-scrollbar {
+  width: 8px;
+}
+
+.manager-app::-webkit-scrollbar-thumb {
+  background: rgba(30, 42, 50, 0.18);
+  border-radius: 4px;
+}
+
+.manager-app::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 42, 50, 0.3);
+}
+
+.manager-app::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .manager-header {
@@ -65,9 +84,8 @@
 
 .manager-item {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px;
   border-radius: 14px;
   background: rgba(255, 252, 248, 0.96);
@@ -106,9 +124,11 @@
 
 .manager-item-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
+  padding-top: 2px;
 }
 
 .manager-badge {
@@ -173,4 +193,172 @@
 .manager-app .chip:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.manager-relationship-panel {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(30, 42, 50, 0.1);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.manager-rel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: rgba(30, 42, 50, 0.72);
+}
+
+.manager-rel-stage strong {
+  color: #1e2a32;
+  font-weight: 650;
+}
+
+.manager-rel-affinity {
+  font-weight: 600;
+  color: #2f6fed;
+}
+
+.manager-rel-temperature {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f0f4fb;
+  border: 1px solid rgba(47, 111, 237, 0.16);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #1e2a32;
+}
+
+.manager-rel-temp-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e8f0e4;
+  color: #2d5a32;
+}
+
+.manager-rel-temp-badge.custom {
+  background: #f7e0c6;
+  color: #7a4a12;
+}
+
+.manager-rel-temp-text {
+  flex: 1;
+}
+
+.manager-rel-frozen-hint {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #fdf3e3;
+  border: 1px solid rgba(122, 74, 18, 0.16);
+  font-size: 11px;
+  color: #7a4a12;
+  line-height: 1.4;
+}
+
+.manager-rel-affinity-edit input:disabled,
+.manager-rel-affinity-edit button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.manager-rel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.manager-rel-affinity-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manager-rel-range {
+  flex: 1;
+  accent-color: #2f6fed;
+}
+
+.manager-rel-number {
+  width: 64px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(30, 42, 50, 0.14);
+  background: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.manager-rel-policies {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.manager-rel-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manager-rel-proposal {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fdf3e3;
+  border: 1px solid rgba(122, 74, 18, 0.14);
+  font-size: 12px;
+}
+
+.manager-rel-proposal-text {
+  flex: 1;
+  line-height: 1.45;
+}
+
+.manager-rel-proposal-evidence {
+  margin-top: 3px;
+  font-size: 11px;
+  color: rgba(30, 42, 50, 0.6);
+}
+
+.manager-rel-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manager-rel-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: rgba(30, 42, 50, 0.72);
+}
+
+.manager-rel-history-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.manager-rel-history-at {
+  color: rgba(30, 42, 50, 0.45);
+  flex-shrink: 0;
 }

@@ -54,11 +54,12 @@ Windows 透明置顶桌宠：**导入完整 Live2D 模型包 + 独立 DeepSeek �
 | `data/memory/` | 长期记忆 JSON + 向量索引 |
 | `data/knowledge/` | 知识库源文档、切块索引、向量 |
 | `data/novels/` | 小说工坊：一书一库（大纲/状态/正文/书内索引），与 memory、knowledge 隔离 |
+| `data/relationships/` | 每模型包的关系状态（好感温度/阶段/演化），与 memory、novels 隔离，删包时级联清理 |
 | `data/traces/` | 工具调用 trace（JSONL） |
 | `data/logs/` | 应用日志 |
 | `data/models/` | BGE-Small-ZH-v1.5 Embedding 权重缓存 |
 | `data/reminders/` | 本地提醒 |
-| `data/config/` | 工具开关等配置 |
+| `data/config/` | 工具开关（`tool-config.json`）、上下文预算（`context-config.json`）等配置 |
 
 小说数据位于 `data/novels/<bookId>/`，每本书独立；Accept 章节不会写入用户聊天记忆，聊天召回也不会读小说正文。
 

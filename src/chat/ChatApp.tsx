@@ -12,6 +12,7 @@ import type {
   ChatSession,
   ChatSessionSummary,
   ChatStreamEvent,
+  ContextUsage,
   KnowledgeCitation,
   KnowledgeDocumentSummary,
   MemoryItem,
@@ -54,11 +55,13 @@ export function ChatApp() {
   const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(
     null,
   )
+  const [ragEnabled, setRagEnabled] = useState(true)
   const [citationsByMessage, setCitationsByMessage] = useState<
     Record<string, KnowledgeCitation[]>
   >({})
   const [notice, setNotice] = useState('')
   const [initializing, setInitializing] = useState(true)
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
   const [toolTimelines, setToolTimelines] = useState<Record<string, ToolTimelineItem[]>>({})
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({})
   const [expandedCitations, setExpandedCitations] = useState<Record<string, boolean>>({})
@@ -86,6 +89,41 @@ export function ChatApp() {
     const next = await window.petAPI.knowledge.list()
     setDocuments(next)
     return next
+  }, [])
+
+  const refreshRagEnabled = useCallback(async () => {
+    try {
+      const { enabled } = await window.petAPI.chat.getRagEnabled()
+      setRagEnabled(enabled)
+    } catch {
+      setRagEnabled(true)
+    }
+  }, [])
+
+  const toggleRag = useCallback(
+    async (next: boolean) => {
+      try {
+        const result = await window.petAPI.chat.setRagEnabled(next)
+        setRagEnabled(result.enabled)
+        setNotice(
+          result.enabled
+            ? '已开启知识库检索（RAG）'
+            : '已关闭知识库检索，对话不再检索知识库',
+        )
+      } catch (error) {
+        setNotice(`切换失败：${errorText(error)}`)
+      }
+    },
+    [],
+  )
+
+  const refreshContextUsage = useCallback(async () => {
+    try {
+      const next = await window.petAPI.chat.getContextUsage()
+      setContextUsage(next)
+    } catch {
+      setContextUsage(null)
+    }
   }, [])
 
   const openSession = useCallback(async (sessionId: string) => {
@@ -270,10 +308,15 @@ export function ChatApp() {
           return next
         })
         void refreshSessions()
+        if (event.type === 'complete') void refreshContextUsage()
       }
     }
     return window.petAPI.chat.onStream(applyEvent)
-  }, [refreshSessions])
+  }, [refreshSessions, refreshContextUsage])
+
+  useEffect(() => {
+    void refreshRagEnabled()
+  }, [refreshRagEnabled])
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -704,6 +747,14 @@ export function ChatApp() {
             </button>
           )}
         </form>
+        {contextUsage && (
+          <div
+            className={`context-usage${contextUsage.ratio >= 0.9 ? ' context-usage-warn' : ''}`}
+            title={`已用 ${contextUsage.usedCharacters.toLocaleString()} / ${contextUsage.budgetCharacters.toLocaleString()} 字符`}
+          >
+            上下文 {Math.round(contextUsage.ratio * 100)}%
+          </div>
+        )}
       </section>
 
       {utilityPanelOpen && (
@@ -814,6 +865,19 @@ export function ChatApp() {
                     </button>
                   </div>
                 </div>
+                <label className="rag-toggle">
+                  <input
+                    type="checkbox"
+                    checked={ragEnabled}
+                    onChange={(event) => void toggleRag(event.target.checked)}
+                  />
+                  <span>对话中启用知识库检索（RAG）</span>
+                  <small>
+                    {ragEnabled
+                      ? '开启：提问文档细节时可通过 search_knowledge 检索'
+                      : '关闭：对话不检索知识库，减少无关上下文占用'}
+                  </small>
+                </label>
                 {retrievalModelError && (
                   <div className="memory-empty retrieval-error">
                     <p>{retrievalModelError}</p>

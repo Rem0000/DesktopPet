@@ -202,7 +202,9 @@ describe('MemoryService', () => {
     const runtime = new AgentRuntime(
       {
         stream: async (_messages, _config, _signal, onToken, systemPrompt) => {
-          const reply = systemPrompt?.includes('提醒喝水')
+          // 运行时只把"remember_fact：成功"注入工具结果提示，不复述内容；
+          // 模型在读到成功结果后才确认已记住
+          const reply = systemPrompt?.includes('remember_fact：成功')
             ? '好的，已记住提醒喝水'
             : '你好'
           onToken(reply)
@@ -296,6 +298,134 @@ describe('MemoryService', () => {
       '咖啡',
     )
     expect(high).toBeGreaterThan(low)
+  })
+
+  it('长历史超过预算时基于完整历史生成会话摘要（修复触发失效）', async () => {
+    const { service } = await createMemoryService()
+    const messages: ChatMessage[] = []
+    for (let i = 0; i < 200; i += 1) {
+      messages.push(
+        message(
+          `m${i}`,
+          's1',
+          i % 2 === 0 ? 'user' : 'assistant',
+          `第 ${i} 轮对话内容 ${'x'.repeat(100)}`,
+        ),
+      )
+    }
+    const assembled = await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages,
+      query: '测试',
+      config,
+      signal: new AbortController().signal,
+      budget: 6_000,
+    })
+    expect(assembled.sessionSummary).toBeTruthy()
+    expect(assembled.systemPrompt).toContain('早期对话要点')
+    expect(assembled.recentMessages.length).toBeLessThan(messages.length)
+  })
+
+  it('AgentRuntime 基于裁剪前完整历史触发会话摘要', async () => {
+    const { tools, service } = await createMemoryService()
+    let seenSystemPrompt = ''
+    const runtime = new AgentRuntime(
+      {
+        stream: async (_messages, _config, _signal, onToken, systemPrompt) => {
+          seenSystemPrompt = systemPrompt ?? ''
+          const reply = 'ok'
+          onToken(reply)
+          return reply
+        },
+      },
+      tools,
+      service,
+      4_000,
+    )
+    const longMessages: ChatMessage[] = []
+    for (let i = 0; i < 120; i += 1) {
+      longMessages.push(
+        message(
+          `m${i}`,
+          's1',
+          i % 2 === 0 ? 'user' : 'assistant',
+          `第${i}轮 ${'x'.repeat(80)}`,
+        ),
+      )
+    }
+    await runtime.run({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: longMessages,
+      config,
+      signal: new AbortController().signal,
+      onToken: () => undefined,
+    })
+    expect(seenSystemPrompt).toContain('早期对话要点')
+  })
+
+  it('新增早期内容不足时复用旧摘要，不每轮重复调用摘要 LLM', async () => {
+    const { store, tools } = await createMemoryService()
+    const summarize = vi.fn(async (_messages: ChatMessage[]) => '人工生成的摘要')
+    const service = new MemoryService(store, tools, summarize)
+
+    const makeMessages = (count: number): ChatMessage[] => {
+      const list: ChatMessage[] = []
+      for (let i = 0; i < count; i += 1) {
+        list.push(
+          message(
+            `m${i}`,
+            's1',
+            i % 2 === 0 ? 'user' : 'assistant',
+            `第 ${i} 轮对话 ${'x'.repeat(100)}`,
+          ),
+        )
+      }
+      return list
+    }
+
+    const base = makeMessages(200)
+    await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: base,
+      query: '测试',
+      config,
+      signal: new AbortController().signal,
+      budget: 6_000,
+    })
+    expect(summarize).toHaveBeenCalledTimes(1)
+
+    // 只追加少量内容：新增未覆盖早期内容远低于闸门，复用旧摘要，不触发 LLM
+    const extended = [
+      ...base,
+      message('m200', 's1', 'user', '补充一句'),
+      message('m201', 's1', 'assistant', '好的'),
+    ]
+    await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: extended,
+      query: '测试',
+      config,
+      signal: new AbortController().signal,
+      budget: 6_000,
+    })
+    expect(summarize).toHaveBeenCalledTimes(1)
+
+    // 大量新增早期内容：超过闸门，重新生成摘要
+    const more = [...extended, ...makeMessages(300).slice(202)]
+    await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: more,
+      query: '测试',
+      config,
+      signal: new AbortController().signal,
+      budget: 6_000,
+    })
+    expect(summarize.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it('retrieve 按关键词命中，pinned 优先，并支持冲突 profile 覆盖', async () => {

@@ -2,9 +2,11 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import type {
   AgentTool,
   ChatMessage,
+  ContextUsage,
   ProviderRuntimeConfig,
 } from '../../src/chat/contracts'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
+import { isContextDebugEnabled, logContext } from './contextDebug'
 import type { MemoryService } from './memoryService'
 import { classifyToolError, summarizeToolInput } from './redact'
 import type { ToolRegistry } from './toolRegistry'
@@ -57,6 +59,8 @@ export const MAX_TOOL_CALLS = 6
 const AgentState = Annotation.Root({
   sessionId: Annotation<string>(),
   messages: Annotation<ChatMessage[]>(),
+  /** normalize 前的完整历史：会话摘要 MUST 基于它计算，而非已裁剪窗口 */
+  allMessages: Annotation<ChatMessage[]>(),
   systemPrompt: Annotation<string>(),
   pendingToolCalls: Annotation<PendingToolCall[]>(),
   toolResults: Annotation<string[]>(),
@@ -70,6 +74,28 @@ const AgentState = Annotation.Root({
 
 const REPLAN_TRIGGER_TOOLS = new Set(['search_knowledge'])
 const MEMORY_WRITE_TOOLS = new Set(['remember_fact', 'update_profile'])
+const RELATIONSHIP_WRITE_TOOLS = new Set(['update_relationship'])
+
+/** 用户消息是否涉及与桌宠的好感/关系变化（路由到 update_relationship） */
+export function hasRelationshipIntent(text: string): boolean {
+  return /好感|亲密度|更喜欢|更喜欢你|讨厌你|讨厌我|和你的关系|我们的关系|关系变|你对我.{0,6}态度|感情变/.test(
+    text,
+  )
+}
+
+export function hasSuccessfulRelationshipWrite(toolResults: string[]): boolean {
+  for (const raw of toolResults) {
+    try {
+      const parsed = JSON.parse(raw) as { tool?: string; ok?: boolean }
+      if (parsed.ok && typeof parsed.tool === 'string' && RELATIONSHIP_WRITE_TOOLS.has(parsed.tool)) {
+        return true
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return false
+}
 
 /** 取最近一条完整用户消息正文 */
 export function latestUserText(messages: ChatMessage[]): string {
@@ -247,8 +273,30 @@ export function formatToolResultsForModel(toolResults: string[], userText = ''):
           ok?: boolean
           error?: string
           errorCode?: string
+          output?: {
+            hits?: Array<{ excerpt?: string; createdAt?: string; sessionId?: string }>
+            empty?: boolean
+          }
         }
         const tool = parsed.tool ?? 'unknown'
+        if (parsed.tool === 'search_history' && parsed.ok) {
+          hasSuccess = true
+          const hits = parsed.output?.hits
+          if (Array.isArray(hits) && hits.length > 0) {
+            lines.push(
+              `- search_history：找到 ${hits.length} 条历史记录，原文如下（引用 MUST 逐字取自以下 excerpt，不得补充结果外的内容）：`,
+            )
+            for (const hit of hits) {
+              const excerpt = typeof hit.excerpt === 'string' ? hit.excerpt : ''
+              lines.push(`  · ${excerpt.replace(/\s+/g, ' ').trim()}`)
+            }
+          } else {
+            lines.push(
+              '- search_history：历史中未找到相关内容。回复 MUST 如实说明未找到，禁止编造或声称存在。',
+            )
+          }
+          continue
+        }
         if (parsed.ok) {
           hasSuccess = true
           lines.push(`- ${tool}：成功。可在回复中自然确认已完成，不要复述 JSON。`)
@@ -293,16 +341,33 @@ export function formatToolResultsForModel(toolResults: string[], userText = ''):
     }
   }
 
+  if (userText && hasRelationshipIntent(userText) && !hasSuccessfulRelationshipWrite(toolResults)) {
+    if (lines.length === 0) {
+      lines.push('【工具结果 — 回复时必须严格遵守】')
+    }
+    lines.push(
+      '注意：用户的话语涉及你们的好感/关系变化，但本轮没有成功的 update_relationship。回复 MUST 据实说明，禁止声称已改变好感或关系状态。',
+    )
+  }
+
   if (lines.length === 0) return ''
   return `\n\n${lines.join('\n')}`
 }
 
 export class AgentRuntime {
+  /** 最近一次上下文组装占用（供 chat:context:usage IPC 观测） */
+  lastContextUsage?: ContextUsage
+
   constructor(
     private readonly provider: AgentProvider,
     private readonly tools: ToolRegistry,
     private readonly memory?: MemoryService,
     private readonly contextBudget = 24_000,
+    /** 规划期工具过滤：返回 false 的工具不进入模型可选集合（如人设优先时屏蔽 update_relationship） */
+    private readonly planToolFilter?: (
+      tool: AgentTool,
+      packageId: string,
+    ) => boolean | Promise<boolean>,
   ) {}
 
   async run(input: {
@@ -327,7 +392,14 @@ export class AgentRuntime {
       state: typeof AgentState.State,
       options: { includeToolResults: boolean },
     ): Promise<PendingToolCall[]> => {
-      const registered = tools.listForPlanning()
+      let registered = tools.listForPlanning()
+      if (this.planToolFilter) {
+        const filtered: AgentTool[] = []
+        for (const tool of registered) {
+          if (await this.planToolFilter(tool, input.packageId)) filtered.push(tool)
+        }
+        registered = filtered
+      }
       if (!provider.planToolCalls || registered.length === 0) return []
       const remaining = MAX_TOOL_CALLS - (state.totalToolCalls ?? 0)
       if (remaining <= 0) return []
@@ -374,6 +446,7 @@ export class AgentRuntime {
 
     const graph = new StateGraph(AgentState)
       .addNode('normalize', async (state) => ({
+        allMessages: state.messages,
         messages: trimContext(state.messages, budget),
       }))
       .addNode('recall', async (state) => {
@@ -385,10 +458,11 @@ export class AgentRuntime {
         const query =
           [...state.messages].reverse().find((message) => message.role === 'user')
             ?.content ?? ''
+        // 会话摘要基于裁剪前完整历史（allMessages），可见窗口由 assemble 内部按预算裁剪
         const assembled = await memory.assemble({
           sessionId: state.sessionId,
           packageId: input.packageId,
-          messages: state.messages,
+          messages: state.allMessages ?? state.messages,
           query,
           config: input.config,
           signal: input.signal,
@@ -511,7 +585,9 @@ export class AgentRuntime {
           const started = Date.now()
           try {
             const validated = tool.validate(call.input)
-            const output = await tool.execute(validated, input.signal)
+            const output = await tool.execute(validated, input.signal, {
+              packageId: input.packageId,
+            })
             const latencyMs = Date.now() - started
             onToolEvent?.({
               phase: 'end',
@@ -576,13 +652,45 @@ export class AgentRuntime {
           state.toolResults ?? [],
           latestUserText(state.messages),
         )
+        const finalPrompt = `${systemPrompt}${toolNote}`
+        const usedCharacters =
+          systemPrompt.length +
+          state.messages.reduce((sum, message) => sum + message.content.length, 0)
+        this.lastContextUsage = {
+          budgetCharacters: budget,
+          usedCharacters,
+          ratio: budget > 0 ? Math.min(1, usedCharacters / budget) : 0,
+        }
+        // [TEMP-DEBUG] 观察上下文管理策略是否生效（写 UTF-8 文件避免 cmd 乱码），验证后删除
+        if (isContextDebugEnabled()) {
+          void logContext([
+            {
+              label: '预算/占用',
+              content: `预算=${budget} 已用=${usedCharacters} (${Math.round((usedCharacters / budget) * 100)}%)`,
+            },
+            {
+              label: '窗口概况',
+              content: `近期窗口消息数=${state.messages.length} 完整历史消息数=${state.allMessages?.length ?? '?'}`,
+            },
+            { label: '系统提示词', content: finalPrompt },
+            {
+              label: '近期消息序列（角色[字符数]）',
+              content: state.messages
+                .map((m) => `${m.role === 'user' ? '用户' : '桌宠'}[${m.content.length}]`)
+                .join(' '),
+            },
+          ])
+          console.log(
+            `[context-debug] wrote to data/logs/context-debug.log at ${new Date().toISOString()}`,
+          )
+        }
         return {
           reply: await provider.stream(
             state.messages,
             input.config,
             input.signal,
             input.onToken,
-            `${systemPrompt}${toolNote}`,
+            finalPrompt,
           ),
         }
       })
@@ -602,6 +710,7 @@ export class AgentRuntime {
     const result = await graph.invoke({
       sessionId: input.sessionId,
       messages: input.messages,
+      allMessages: input.messages,
       systemPrompt: '',
       pendingToolCalls: input.pendingToolCalls ?? [],
       toolResults: [],

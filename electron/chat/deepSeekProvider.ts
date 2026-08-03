@@ -20,6 +20,7 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const PLAN_TOOL_INSTRUCTION = [
   '你正在决定是否需要调用工具（长期记忆、本地提醒或知识库检索）。',
   '当用户询问本地文档、项目说明、已导入资料或知识库细节时，优先调用 search_knowledge；不要编造文档内容。',
+  '当用户引用更早的对话（如「我之前说过…」「上次你说…」）且当前上下文中缺少该细节时，调用 search_history 检索本模型的历史会话；普通闲聊不要调用。',
   '同一条用户消息若同时包含知识库问题与明确的记忆写入请求：记忆内容不依赖检索结果时可同轮并行调用 search_knowledge 与 remember_fact/update_profile；需根据检索结果再写时先调用 search_knowledge。',
   '仅当用户明确表达了应跨模型长期保留的画像（update_profile）或事实/约定（remember_fact）时才调用记忆工具；同一事实不要重复调用多次；禁止只用口头声称已记住。',
   '当用户明确要求「N 分钟后提醒」「到某时刻提醒」等到点主动提醒时，调用 schedule_reminder；不要仅用 remember_fact 代替。',
@@ -27,6 +28,7 @@ export const PLAN_TOOL_INSTRUCTION = [
   '当用户明确要求「忘记/忘掉/删除」某条记忆或爱好时，MUST 调用 forget_memory，并从下方【可遗忘记忆列表】中选择匹配条目的 id；禁止只用口头声称已忘记。',
   '若列表中没有匹配项，不要调用 forget_memory，并如实告知找不到对应记忆。',
   '模型口吻、称呼方式、输出规范（如说话结尾加喵、回答要简洁）不要写入记忆，应提示用户在「管理已导入模型」中编辑人设；此类请求禁止调用记忆工具，也禁止口头声称已记住。',
+  '当对话明显增进或损害你与用户的好感/关系（相互理解加深、闹矛盾、说难听话等）时，调用 update_relationship 记录关系温度变化与笔记；口吻/输出规范类不要调用，普通闲聊不要调用。',
   '普通闲聊、一次性问题、临时情绪不要写入记忆，也不要创建提醒。',
   '不要编造用户未说过的信息；一次最多调用 3 个工具，且同类工具不要重复。',
   '若无需工具操作，不要调用任何工具。',
@@ -235,11 +237,17 @@ export class DeepSeekProvider {
         baseURL: config.baseUrl,
       },
     })
-    const transcript = messages
+    const fullTranscript = messages
       .filter((message) => message.status === 'complete' && message.content.trim())
       .map((message) => `${message.role === 'user' ? '用户' : '桌宠'}：${message.content}`)
       .join('\n')
-      .slice(0, 8_000)
+    // head + tail 采样：覆盖最老设定与被挤出窗口的近期内容，避免只概括最开头
+    const HEAD_CHARS = 4_000
+    const TAIL_CHARS = 4_000
+    const transcript =
+      fullTranscript.length <= HEAD_CHARS + TAIL_CHARS
+        ? fullTranscript
+        : `${fullTranscript.slice(0, HEAD_CHARS)}\n…（中段省略）…\n${fullTranscript.slice(-TAIL_CHARS)}`
     const result = await model.invoke(
       [
         new SystemMessage(
@@ -247,6 +255,30 @@ export class DeepSeekProvider {
         ),
         new HumanMessage(transcript || '（无内容）'),
       ],
+      { signal },
+    )
+    return textFromContent(result.content).trim()
+  }
+
+  /** 非流式单轮补全：供关系演化反思等一次性结构化调用复用 */
+  async completeText(
+    systemPrompt: string,
+    userPrompt: string,
+    config: ProviderRuntimeConfig,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const model = new ChatOpenAI({
+      apiKey: config.apiKey,
+      model: config.model,
+      streaming: false,
+      timeout: 60_000,
+      maxRetries: 1,
+      configuration: {
+        baseURL: config.baseUrl,
+      },
+    })
+    const result = await model.invoke(
+      [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
       { signal },
     )
     return textFromContent(result.content).trim()

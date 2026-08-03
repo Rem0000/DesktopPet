@@ -9,6 +9,7 @@ import type {
   PetAgentState,
   ProviderConfigInput,
   ProviderPublicConfig,
+  ContextUsage,
   Reminder,
   ReminderCreateInput,
   SendChatInput,
@@ -18,6 +19,9 @@ import type {
   ToolTraceRecord,
   ToolTraceStats,
   KnowledgeDocumentSummary,
+  EvolutionProposal,
+  RelationshipPanelView,
+  RelationshipPatch,
 } from '../src/chat/contracts'
 
 export type Live2DRuntime = 'cubism2' | 'cubism4'
@@ -187,6 +191,12 @@ const api = {
       ipcRenderer.invoke('chat:sessions:create', packageId),
     getActivePackageId: (): Promise<string | null> =>
       ipcRenderer.invoke('chat:active-package-id'),
+    getContextUsage: (): Promise<ContextUsage | null> =>
+      ipcRenderer.invoke('chat:context:usage'),
+    getRagEnabled: (): Promise<{ enabled: boolean }> =>
+      ipcRenderer.invoke('chat:rag:get'),
+    setRagEnabled: (enabled: boolean): Promise<{ enabled: boolean }> =>
+      ipcRenderer.invoke('chat:rag:set', enabled),
     getSession: (sessionId: string): Promise<ChatSession | null> =>
       ipcRenderer.invoke('chat:sessions:get', sessionId),
     deleteSession: (sessionId: string): Promise<boolean> =>
@@ -280,6 +290,30 @@ const api = {
       ipcRenderer.invoke('reminders:create', input),
     cancel: (id: string): Promise<boolean> =>
       ipcRenderer.invoke('reminders:cancel', id),
+  },
+  relationship: {
+    get: (packageId: string): Promise<RelationshipPanelView> =>
+      ipcRenderer.invoke('relationship:get', packageId),
+    patch: (
+      packageId: string,
+      patch: RelationshipPatch,
+    ): Promise<RelationshipPanelView> =>
+      ipcRenderer.invoke('relationship:patch', packageId, patch),
+    reset: (packageId: string): Promise<RelationshipPanelView> =>
+      ipcRenderer.invoke('relationship:reset', packageId),
+    proposals: (packageId: string): Promise<EvolutionProposal[]> =>
+      ipcRenderer.invoke('relationship:proposals', packageId),
+    respondProposal: (
+      packageId: string,
+      proposalId: string,
+      accept: boolean,
+    ): Promise<EvolutionProposal> =>
+      ipcRenderer.invoke(
+        'relationship:proposal-respond',
+        packageId,
+        proposalId,
+        accept,
+      ),
   },
   onSpeechBubble: (cb: (payload: SpeechBubblePayload) => void) => {
     const handler = (_: unknown, payload: SpeechBubblePayload) => cb(payload)

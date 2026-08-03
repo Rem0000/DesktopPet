@@ -10,7 +10,18 @@ import { MemoryStore } from '../electron/chat/memoryStore'
 import { redactSensitive } from '../electron/chat/redact'
 import { ToolRegistry } from '../electron/chat/toolRegistry'
 import { ToolTraceStore } from '../electron/chat/toolTraceStore'
+import { ChatStore } from '../electron/chat/chatStore'
+import { HistorySearchService } from '../electron/chat/historySearch'
+import type { ChatMessage } from '../src/chat/contracts'
 import { installMockEmbeddingPipeline } from '../electron/retrieval/testHelpers'
+import { RelationshipService } from '../electron/relationship/relationshipService'
+import { RelationshipStore } from '../electron/relationship/relationshipStore'
+
+const cipher = {
+  isEncryptionAvailable: () => true,
+  encryptString: (value: string) => Buffer.from(`encrypted:${value}`, 'utf8'),
+  decryptString: (value: Buffer) => value.toString('utf8').replace(/^encrypted:/, ''),
+}
 
 type Scenario = {
   id: string
@@ -403,6 +414,212 @@ async function runAssert(assert: string): Promise<void> {
         })
         const stats = await traces.summarize()
         expect(stats[0]).toMatchObject({ toolName: 'remember_fact', calls: 2, successes: 1 })
+      })
+      return
+    case 'relationship_tool_registered':
+      await withTempDir(async (dir) => {
+        const relStore = new RelationshipStore(dir)
+        await relStore.initialize()
+        const registry = new ToolRegistry()
+        const service = new RelationshipService(relStore, registry, () => 'pkg-1')
+        service.registerDefaultTools()
+        const tool = registry.get('update_relationship')
+        expect(tool).toBeTruthy()
+        expect(registry.getRiskLevel('update_relationship')).toBe('safe')
+        const output = await tool!.execute(
+          tool!.validate({ delta: 10, note: '聊得很开心' }),
+          new AbortController().signal,
+        )
+        expect(output).toMatchObject({ ok: true })
+        const state = await relStore.getState('pkg-1')
+        expect(state.affinity).toBe(30)
+        expect(state.history).toHaveLength(1)
+      })
+      return
+    case 'relationship_injection_layered':
+      {
+        const { buildRelationshipLayer } = await import(
+          '../electron/relationship/relationshipRender'
+        )
+        const layer = buildRelationshipLayer(
+          {
+            policy: 'layered',
+            affinity: 20,
+            stage: 'stranger',
+            temperatureNote: '',
+            evolutions: [],
+            history: [],
+            updatedAt: '2026-08-01T00:00:00.000Z',
+          },
+          'layered',
+        )
+        expect(layer).toContain('刚认识的陌生人')
+        expect(layer).toContain('既定关系')
+      }
+      return
+    case 'relationship_memory_isolation':
+      await withTempDir(async (dir) => {
+        const memory = new MemoryStore(dir)
+        await memory.initialize()
+        const relStore = new RelationshipStore(dir)
+        await relStore.initialize()
+        await relStore.applyWrite('pkg-1', { delta: 10 })
+        // 关系写入不产生记忆条目
+        expect(memory.listItems()).toHaveLength(0)
+        await memory.writeItem({ type: 'fact', content: '用户记忆', importance: 2 })
+        await memory.clearItems()
+        // 清空记忆不影响关系状态
+        const state = await relStore.getState('pkg-1')
+        expect(state.affinity).toBe(30)
+      })
+      return
+    case 'relationship_persona_first_block':
+      await withTempDir(async (dir) => {
+        const relStore = new RelationshipStore(dir)
+        await relStore.initialize()
+        const registry = new ToolRegistry()
+        const service = new RelationshipService(relStore, registry, () => 'pkg-1')
+        service.registerDefaultTools()
+        await relStore.patch('pkg-1', { policy: 'persona-first' })
+        const tool = registry.get('update_relationship')!
+        const result = await tool.execute(
+          tool.validate({ delta: 10 }),
+          new AbortController().signal,
+        )
+        expect(result).toMatchObject({
+          ok: false,
+          errorCode: 'persona_first_policy',
+        })
+        expect((await relStore.getState('pkg-1')).affinity).toBe(20)
+      })
+      return
+    case 'context_search_history_registered':
+      await withTempDir(async (dir) => {
+        const store = new ChatStore(dir, cipher)
+        await store.initialize()
+        const registry = new ToolRegistry()
+        const service = new HistorySearchService(store, registry, () => 'pkg-1')
+        service.registerDefaultTools()
+        expect(registry.get('search_history')).toBeTruthy()
+        expect(registry.getRiskLevel('search_history')).toBe('safe')
+      })
+      return
+    case 'context_search_history_scope':
+      await withTempDir(async (dir) => {
+        const store = new ChatStore(dir, cipher)
+        await store.initialize()
+        const a = await store.createSession('pkg-a')
+        await store.appendMessage(a.id, 'user', '我喜欢美式咖啡')
+        const b = await store.createSession('pkg-b')
+        await store.appendMessage(b.id, 'user', '我只喝抹茶拿铁')
+        const registry = new ToolRegistry()
+        const service = new HistorySearchService(store, registry, () => 'pkg-a')
+        service.registerDefaultTools()
+        const tool = registry.get('search_history')!
+        const out = (await tool.execute(
+          tool.validate({ query: '咖啡', topK: 8 }),
+          new AbortController().signal,
+        )) as { hits: Array<{ excerpt: string }> }
+        expect(out.hits.some((hit) => hit.excerpt.includes('美式'))).toBe(true)
+        expect(out.hits.every((hit) => !hit.excerpt.includes('抹茶'))).toBe(true)
+      })
+      return
+    case 'context_search_history_empty':
+      await withTempDir(async (dir) => {
+        const store = new ChatStore(dir, cipher)
+        await store.initialize()
+        const s = await store.createSession('pkg-1')
+        await store.appendMessage(s.id, 'user', '今天天气不错')
+        const registry = new ToolRegistry()
+        const service = new HistorySearchService(store, registry, () => 'pkg-1')
+        service.registerDefaultTools()
+        const tool = registry.get('search_history')!
+        const out = (await tool.execute(
+          tool.validate({ query: '量子纠缠xyz' }),
+          new AbortController().signal,
+        )) as { empty: boolean }
+        expect(out.empty).toBe(true)
+      })
+      return
+    case 'context_summary_triggered':
+      await withTempDir(async (dir) => {
+        const store = new MemoryStore(dir)
+        await store.initialize()
+        const registry = new ToolRegistry()
+        const service = new MemoryService(store, registry)
+        service.registerDefaultTools()
+        const messages: ChatMessage[] = []
+        for (let i = 0; i < 200; i += 1) {
+          messages.push({
+            id: `m${i}`,
+            sessionId: 's1',
+            role: i % 2 === 0 ? 'user' : 'assistant',
+            content: `第 ${i} 轮 ${'x'.repeat(100)}`,
+            status: 'complete',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          })
+        }
+        const assembled = await service.assemble({
+          sessionId: 's1',
+          packageId: 'pkg',
+          messages,
+          query: '测试',
+          config: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKey: 'k' },
+          signal: new AbortController().signal,
+          budget: 6_000,
+        })
+        expect(assembled.sessionSummary).toBeTruthy()
+        expect(assembled.systemPrompt).toContain('早期对话要点')
+      })
+      return
+    case 'context_rag_toggle_off':
+      await withTempDir(async (dir) => {
+        const store = new KnowledgeStore(dir)
+        await store.initialize()
+        const registry = new ToolRegistry()
+        new KnowledgeService(store, registry).registerDefaultTools()
+        registry.applyOverrides({ search_knowledge: { enabled: false } })
+        expect(
+          registry.listForPlanning().some((tool) => tool.name === 'search_knowledge'),
+        ).toBe(false)
+        expect(registry.isEnabled('search_knowledge')).toBe(false)
+        const { AgentRuntime } = await import('../electron/chat/agentRuntime')
+        let formatted = ''
+        const runtime = new AgentRuntime(
+          {
+            stream: async (_m, _c, _s, onToken, systemPrompt) => {
+              formatted = systemPrompt ?? ''
+              onToken('ok')
+              return 'ok'
+            },
+          },
+          registry,
+        )
+        await runtime.run({
+          sessionId: 's',
+          packageId: 'pkg',
+          messages: [
+            {
+              id: '1',
+              sessionId: 's',
+              role: 'user',
+              content: '查一下文档',
+              status: 'complete',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          config: {
+            baseUrl: 'https://api.deepseek.com',
+            model: 'deepseek-chat',
+            apiKey: 'k',
+          },
+          signal: new AbortController().signal,
+          onToken: () => undefined,
+          pendingToolCalls: [{ name: 'search_knowledge', input: { query: 'x' } }],
+        })
+        expect(formatted).toContain('search_knowledge：失败')
       })
       return
     default:

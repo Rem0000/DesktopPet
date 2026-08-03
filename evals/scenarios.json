@@ -142,5 +142,59 @@
     "category": "memory",
     "description": "相关事实分数高于无关",
     "assert": "memory_score"
+  },
+  {
+    "id": "relationship-tool-registered",
+    "category": "relationship",
+    "description": "update_relationship 默认注册为 safe 且可写好感",
+    "assert": "relationship_tool_registered"
+  },
+  {
+    "id": "relationship-injection-layered",
+    "category": "relationship",
+    "description": "layered 渲染包含阶段与固有设定说明",
+    "assert": "relationship_injection_layered"
+  },
+  {
+    "id": "relationship-memory-isolation",
+    "category": "relationship",
+    "description": "关系写入不落记忆，清空记忆不影响关系",
+    "assert": "relationship_memory_isolation"
+  },
+  {
+    "id": "relationship-persona-first-block",
+    "category": "relationship",
+    "description": "人设优先策略下好感工具被拦截、好感不变",
+    "assert": "relationship_persona_first_block"
+  },
+  {
+    "id": "context-search-history-registered",
+    "category": "context",
+    "description": "search_history 默认注册为 safe 且可包级检索",
+    "assert": "context_search_history_registered"
+  },
+  {
+    "id": "context-search-history-scope",
+    "category": "context",
+    "description": "search_history 只检索活跃包会话，不串其他包",
+    "assert": "context_search_history_scope"
+  },
+  {
+    "id": "context-search-history-empty",
+    "category": "context",
+    "description": "search_history 无命中返回 empty",
+    "assert": "context_search_history_empty"
+  },
+  {
+    "id": "context-summary-triggered",
+    "category": "context",
+    "description": "长历史基于完整历史触发会话摘要",
+    "assert": "context_summary_triggered"
+  },
+  {
+    "id": "context-rag-toggle-off",
+    "category": "context",
+    "description": "关闭 RAG 后 search_knowledge 不进入规划且执行被拒",
+    "assert": "context_rag_toggle_off"
   }
 ]

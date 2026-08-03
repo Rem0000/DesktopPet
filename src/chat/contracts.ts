@@ -86,6 +86,28 @@ export type KnowledgeCitation = {
   recallSource?: 'sparse' | 'vector' | 'both'
 }
 
+/** search_history 逐字命中：带出处，供模型引用与观测 */
+export type HistoryHit = {
+  messageId: string
+  sessionId: string
+  role: ChatRole
+  createdAt: string
+  excerpt: string
+  score: number
+}
+
+export type HistorySearchInput = {
+  query: string
+  topK: number
+}
+
+/** 上下文占用观测：预算、已用估算与占比 */
+export type ContextUsage = {
+  budgetCharacters: number
+  usedCharacters: number
+  ratio: number
+}
+
 export type ToolCallPhase = 'start' | 'end'
 
 export type ChatStreamEvent =
@@ -145,6 +167,12 @@ export type AgentToolParameters = {
 /** safe：白名单直接执行；confirm：执行前需用户确认（P3） */
 export type ToolRiskLevel = 'safe' | 'confirm'
 
+/** 工具执行上下文：由运行时注入当前请求的会话归属，避免工具回退到环境活跃包 */
+export type AgentToolContext = {
+  /** 当前请求所属会话的模型包；按包落盘/检索应优先使用它 */
+  packageId: string
+}
+
 export type AgentTool<Input = unknown, Output = unknown> = {
   name: string
   description: string
@@ -155,7 +183,7 @@ export type AgentTool<Input = unknown, Output = unknown> = {
   /** 默认 safe */
   riskLevel?: ToolRiskLevel
   validate: (input: unknown) => Input
-  execute: (input: Input, signal: AbortSignal) => Promise<Output>
+  execute: (input: Input, signal: AbortSignal, ctx?: AgentToolContext) => Promise<Output>
 }
 
 export type ToolConfigOverride = {
@@ -282,4 +310,80 @@ export type ReminderCreateInput = {
 export type SpeechBubblePayload = {
   text: string
   durationMs?: number
+}
+
+/** 关系优先级策略：人设中的关系表述如何与动态关系层协同 */
+export type RelationshipPolicy = 'layered' | 'persona-first' | 'dynamic-first'
+
+/** 好感温度对应的关系阶段 */
+export type RelationshipStage =
+  | 'stranger'
+  | 'acquaintance'
+  | 'friendly'
+  | 'close'
+  | 'intimate'
+
+export type EvolutionStatus = 'proposed' | 'applied' | 'rejected'
+
+/** 慢速演化候选/已生效覆盖：对 persona 固有设定的"从→到"建议 */
+export type EvolutionProposal = {
+  id: string
+  /** 引用的人设原文片段 */
+  personaQuote: string
+  /** 建议的现状变化描述 */
+  change: string
+  /** 近期对话证据摘要 */
+  evidence: string
+  status: EvolutionStatus
+  createdAt: string
+  appliedAt?: string
+  sessionId?: string
+}
+
+export type RelationshipHistoryEntry = {
+  at: string
+  type: 'affinity' | 'stage' | 'manual' | 'reset' | 'evolution'
+  delta?: number
+  beforeStage?: RelationshipStage
+  afterStage?: RelationshipStage
+  note?: string
+  sessionId?: string
+}
+
+/** 每包关系状态；持久化于 data/relationships/<packageId>.json */
+export type RelationshipState = {
+  policy: RelationshipPolicy
+  /** 好感温度 0–100 */
+  affinity: number
+  stage: RelationshipStage
+  /** 当下态度描述（空则按阶段回退默认） */
+  temperatureNote: string
+  evolutions: EvolutionProposal[]
+  history: RelationshipHistoryEntry[]
+  lastEvaluatedAt?: string
+  updatedAt: string
+}
+
+/** update_relationship 工具的写入载荷 */
+export type RelationshipWriteInput = {
+  /** 好感温度增减，钳制在 [-10, +10] */
+  delta?: number
+  /** 简短关系笔记（≤120 字） */
+  note?: string
+  sessionId?: string
+}
+
+/** 面板手工修正关系状态 */
+export type RelationshipPatch = {
+  affinity?: number
+  temperatureNote?: string
+  policy?: RelationshipPolicy
+}
+
+/** 面板展示用视图：附上生效描述与阶段中文标签 */
+export type RelationshipPanelView = RelationshipState & {
+  /** 生效的"当下态度描述"（自定义或按阶段+好感自动回退） */
+  temperature: string
+  /** 关系阶段中文标签 */
+  stageLabel: string
 }

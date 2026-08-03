@@ -13,7 +13,7 @@ describe('projectPaths novels subdir', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('ensureDataDirs creates novels/', async () => {
+  it('ensureDataDirs creates novels/ and relationships/', async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pet-data-'))
     process.env.DESKTOP_PET_DATA = tempRoot
     const { ensureDataDirs, resolveDataSubpath } = await import('./projectPaths')
@@ -23,5 +23,9 @@ describe('projectPaths novels subdir', () => {
     await mkdir(novelsDir, { recursive: true })
     const { access } = await import('node:fs/promises')
     await expect(access(novelsDir)).resolves.toBeUndefined()
+
+    const relationshipsDir = resolveDataSubpath('relationships')
+    expect(relationshipsDir).toBe(path.join(tempRoot, 'relationships'))
+    await expect(access(relationshipsDir)).resolves.toBeUndefined()
   })
 })

@@ -328,6 +328,25 @@ describe('AgentRuntime', () => {
     expect(note).toContain('禁止声称已经忘记')
   })
 
+  it('formatToolResultsForModel 注入 search_history 命中原文，供模型逐字引用', () => {
+    const note = formatToolResultsForModel([
+      JSON.stringify({
+        tool: 'search_history',
+        ok: true,
+        output: {
+          hits: [
+            { messageId: 'm1', excerpt: '我其实更喜欢喝美式咖啡' },
+            { messageId: 'm2', excerpt: '上次说的那个功能还没做完' },
+          ],
+        },
+      }),
+    ])
+    expect(note).toContain('找到 2 条历史记录')
+    expect(note).toContain('我其实更喜欢喝美式咖啡')
+    expect(note).toContain('上次说的那个功能还没做完')
+    expect(note).toContain('逐字取自')
+  })
+
   it('识别记住意图与输出规范类记住请求', () => {
     expect(hasRememberIntent('另外，记住我喜欢简洁的回答。')).toBe(true)
     expect(isPersonaStyleRememberRequest('另外，记住我喜欢简洁的回答。')).toBe(true)

@@ -4,10 +4,13 @@ import type {
   MemoryItem,
   MemoryWriteInput,
   ProviderRuntimeConfig,
+  RelationshipState,
   AgentTool,
 } from '../../src/chat/contracts'
+import { isContextDebugEnabled, logContext } from './contextDebug'
 import { embedQuery } from '../retrieval/embeddingService'
 import { hybridSearch } from '../retrieval/hybridSearch'
+import { buildRelationshipLayer } from '../relationship/relationshipRender'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import type { MemoryStore } from './memoryStore'
 import { assertSafeMemoryContent } from './memoryStore'
@@ -23,6 +26,9 @@ export type AssembledContext = {
 const DEFAULT_BUDGET = 24_000
 const MEMORY_BUDGET_RATIO = 0.18
 const SUMMARY_BUDGET_RATIO = 0.12
+/** 摘要重新生成闸门：自上次摘要以来新增未覆盖"早期"内容达到该字符数才重算 LLM，
+ *  避免会话超预算后每一轮都阻塞等待摘要生成（见 ensureSessionSummary）。 */
+const SUMMARY_REGEN_MIN_CHARS = 4_000
 
 function tokenize(text: string): string[] {
   return text
@@ -126,15 +132,24 @@ export async function retrieveMemories(
     .filter((item): item is MemoryItem => Boolean(item))
 }
 
+/** 早期消息要点列表：头部 + 尾部采样，覆盖最老设定与被挤出窗口的内容 */
 export function fallbackSummaryFromMessages(messages: ChatMessage[]): string {
-  const points = messages
-    .filter((message) => message.status === 'complete' && message.content.trim())
-    .slice(0, 8)
-    .map((message) => {
-      const prefix = message.role === 'user' ? '用户' : '桌宠'
-      const text = message.content.replace(/\s+/g, ' ').trim().slice(0, 48)
-      return `- ${prefix}：${text}`
-    })
+  const eligible = messages.filter(
+    (message) => message.status === 'complete' && message.content.trim(),
+  )
+  const head = eligible.slice(0, 6)
+  const tail = eligible.length > 12 ? eligible.slice(-4) : []
+  const seen = new Set<string>()
+  const sampled = [...head, ...tail].filter((message) => {
+    if (seen.has(message.id)) return false
+    seen.add(message.id)
+    return true
+  })
+  const points = sampled.map((message) => {
+    const prefix = message.role === 'user' ? '用户' : '桌宠'
+    const text = message.content.replace(/\s+/g, ' ').trim().slice(0, 48)
+    return `- ${prefix}：${text}`
+  })
   return points.length ? `早期对话要点：\n${points.join('\n')}` : '（暂无可用摘要）'
 }
 
@@ -148,6 +163,9 @@ export class MemoryService {
       signal: AbortSignal,
     ) => Promise<string>,
     private readonly readPersona: (packageId: string) => string = () => '',
+    private readonly readRelationship?: (
+      packageId: string,
+    ) => Promise<RelationshipState | null>,
   ) {}
 
   /** 供工具规划注入：近期可遗忘条目（不含 preference） */
@@ -413,6 +431,24 @@ export class MemoryService {
     ) {
       return existing.summary
     }
+    // 闸门：与上次摘要相比，新增的未覆盖早期内容不足以支撑一次 LLM 重算时，
+    // 沿用旧摘要（缺失的近期细节由 recentMessages 原样呈现）。旧实现因窗口
+    // 每轮滑动导致 coveredUntilMessageId 永不命中，使超预算会话每轮都阻塞等摘要。
+    if (existing && lastEarly) {
+      const coveredIndex = complete.findIndex(
+        (message) => message.id === existing.coveredUntilMessageId,
+      )
+      const uncoveredEarlyChars =
+        coveredIndex >= 0
+          ? complete
+              .slice(coveredIndex + 1)
+              .filter((message) => !recentIds.has(message.id))
+              .reduce((sum, message) => sum + message.content.length, 0)
+          : early.reduce((sum, message) => sum + message.content.length, 0)
+      if (uncoveredEarlyChars < SUMMARY_REGEN_MIN_CHARS) {
+        return existing.summary
+      }
+    }
 
     let summary = fallbackSummaryFromMessages(early)
     if (this.summarize) {
@@ -431,6 +467,15 @@ export class MemoryService {
         coveredUntilMessageId: lastEarly.id,
         updatedAt: new Date().toISOString(),
       })
+    }
+    // [TEMP-DEBUG] 观察滚动摘要生成/更新时机（写 UTF-8 文件避免 cmd 乱码），验证后删除
+    if (isContextDebugEnabled()) {
+      void logContext([
+        {
+          label: '会话摘要生成/更新',
+          content: `coveredUntilMessageId=${lastEarly?.id ?? '无'} 摘要${summary.length}字符 | ${summary.replace(/\s+/g, ' ').slice(0, 120)}…`,
+        },
+      ])
     }
     return summary
   }
@@ -457,11 +502,16 @@ export class MemoryService {
 
     const persona = this.readPersona(input.packageId).trim()
     const rolePrompt = persona || DEFAULT_SYSTEM_PROMPT
+    const relationshipState =
+      (await this.readRelationship?.(input.packageId)) ?? null
+    const relationshipLayer = relationshipState
+      ? buildRelationshipLayer(relationshipState, relationshipState.policy)
+      : ''
     const memoryBlock = formatMemoryBlock(recalledItems, Math.floor(budget * MEMORY_BUDGET_RATIO))
     const summaryBlock = sessionSummary
       ? truncateText(`【会话摘要】\n${sessionSummary}`, Math.floor(budget * SUMMARY_BUDGET_RATIO))
       : ''
-    const systemPrompt = [rolePrompt, memoryBlock, summaryBlock]
+    const systemPrompt = [rolePrompt, relationshipLayer, memoryBlock, summaryBlock]
       .filter(Boolean)
       .join('\n\n')
 
