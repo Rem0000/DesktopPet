@@ -6,7 +6,7 @@
 
 ## 项目一句话（秋招版）
 
-基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合；另新增**活的关系状态（亲密度）**——好感温度随对话实时增减、三种策略化注入、慢速人审演化，永不改写人设；并落地**分层上下文工程**——滚动会话摘要、可配置上下文预算、包级历史会话按需检索，长对话不再遗忘上文。
+基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合；另新增**活的关系状态（亲密度）**——好感温度随对话实时增减、三种策略化注入、慢速人审演化，永不改写人设；并落地**分层上下文工程**——滚动会话摘要、可配置上下文预算、包级历史会话按需检索，长对话不再遗忘上文。更进一步：对话关键事实**自动 episode 沉淀**到长期记忆（非阻塞抽取 + 触发闸门 + 去重）、**消息级重要性加权裁剪**（超预算时窗口外高重要性消息优先保留）、助手回复 **Markdown 安全渲染**（仅助手消息、流式期纯文本、raw HTML 转义）。
 
 ## 简历包装标题（建议）
 
@@ -16,18 +16,21 @@
 
 1. 独立开发桌面智能体应用：Electron 主进程承载 DeepSeek 流式对话与 LangGraph 图编排（recall → plan → toolBoundary → model → commit），渲染进程多窗口隔离，API Key 仅存主进程 safeStorage。
 2. 设计可扩展 Tool Registry 与白名单工具边界（记忆写入/遗忘、本地提醒、知识库检索），将 Agent 工具调用与本地持久化、桌宠气泡/系统通知联动；并建设工具调用链路可观测（JSONL 耗时/成功率、聊天时间线、入参脱敏）。
-3. 实现分层长期记忆（跨模型共享画像/事实 vs 按模型人设）与 **Hybrid 可检索召回**（BM25 + BGE 向量 + RRF 融合）；落地本地知识库 RAG（Markdown 结构切块、headingPath 元数据、`search_knowledge`、引用溯源）与 20 条离线评测集（工具/记忆/RAG，当前 20/20）。
+3. 实现分层长期记忆（跨模型共享画像/事实 vs 按模型人设）与 **Hybrid 可检索召回**（BM25 + BGE 向量 + RRF 融合）；落地本地知识库 RAG（Markdown 结构切块、headingPath 元数据、`search_knowledge`、引用溯源）与 20 条离线评测集（工具/记忆/RAG，离线 eval 全绿）。
 4. 设计独立**小说工坊**模块：一书一库 StoryStore（角色/关系/知情差/时间线/伏笔账本），写章流水线 `assemble → draft → StateDiff → Continuity Guard → 人审 Accept`；Accept 才晋升 Canon 并重建书内 Hybrid 索引；复用检索内核但数据路径与聊天记忆/知识库严格隔离；全书预览与 Markdown/HTML/PDF 导出。
 5. 实现**活的关系状态（亲密度）**：按模型包隔离持久化好感温度（0–100 五段关系阶段）、`update_relationship` 白名单工具按对话实时增减（±10 clamp、人设优先冻结）、`MemoryService.assemble` 分层注入（persona 不可变种子 + 关系块 + 演化覆盖）、**慢速人审演化**（阈值+事件驱动反思 → 候选 → 人审接受才生效，永不改写 persona.md），与记忆/小说零耦合。
 6. 实现**分层上下文工程**：修复长对话"忘上文"——会话摘要改为基于**裁剪前完整历史**的滚动摘要（`coveredUntilMessageId` 增量推进）、上下文预算 24k→40k 且 `data/config/` 可配置、新增 `search_history` 工具按需检索当前包**全部历史会话**原话（BM25-only、带出处、窄触发）、上下文占用水位可观测。
+7. 实现**对话关键事实自动 episode 沉淀**：每轮对话完成后主进程**非阻塞**抽取关键事实写入 `episode` 记忆（带会话/消息溯源）；触发闸门（关键事实意图或累计未沉淀消息达阈值）+ 间隔限频 + 与既有记忆去重，`data/config/episode-config.json` 可开关；普通闲聊零调用、抽取失败只日志不阻断聊天。
+8. 实现**消息级重要性加权裁剪**：`ChatMessage` 增写入期启发式 `importance`（关键事实/提问/长消息/工具成功加权），超预算裁剪改为「近期窗口逐字保留 + 窗口外按 importance 高→低补齐、输出保序」，`context-config.json` 可配 `importanceTrim`；让重要的早期事实不再被琐碎闲聊顶掉。
+9. 实现**助手回复 Markdown 安全渲染**：助手消息以 `react-markdown` 渲染（标题/列表/代码块/表格/引用/链接，`remark-gfm`），用户消息保持纯文本；流式期逐字纯文本、完成态一次渲染；raw HTML 由渲染器默认转义为纯文本（不产生可执行 DOM 节点，符合 CSP）。
 
-> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **32/32** 通过（见 `evals/`）。第 4 条对应 OpenSpec `novel-writing-studio`（26/26 tasks 已落地）。第 5 条对应 `living-pet-relationship`（36/36 tasks 已落地，详见 §10）。第 6 条对应 `context-management-strategy`，详见 §11。
+> 第 2、3 条中「可观测 / 可检索 / RAG / 评测」已在 `agent-platform-resume-track` 落地；离线 eval **32/32** 通过（见 `evals/`）。第 4 条对应 OpenSpec `novel-writing-studio`（26/26 tasks 已落地）。第 5 条对应 `living-pet-relationship`（36/36 tasks 已落地，详见 §10）。第 6 条对应 `context-management-strategy`，详见 §11。第 7–9 条对应 `episode-memory-importance-trimming` 与 `assistant-markdown-rendering`，详见 §12。
 
 ## 离线评测指标（当前）
 
 | 集合 | 场景数 | 通过 | 覆盖 |
 |------|--------|------|------|
-| `evals/scenarios.json` | 33 | 33 | 工具开关/观测脱敏、记忆检索与安全写入、RAG 命中/隔离/引用、关系路由/分层渲染/记忆隔离/人设优先拦截、历史会话检索/摘要触发/RAG 开关 |
+| `evals/scenarios.json` | 37 | 37 | 工具开关/观测脱敏、记忆检索与安全写入、RAG 命中/隔离/引用、关系路由/分层渲染/记忆隔离/人设优先拦截、历史会话检索/摘要触发/RAG 开关、episode 自动沉淀/去重/开关、重要性加权裁剪 |
 
 运行：`npm test -- --run evals/run.eval.test.ts`
 
@@ -40,7 +43,7 @@
 | P2 | 7–8 | 本地 md/txt RAG + 引用展示 | 「检索增强与降幻觉」 |
 | P3 | 9–10 | ≥20 条 eval + confirm 闸门 + 敏感遮罩 | 「有指标、有安全边界」 |
 
-当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；`novel-writing-studio` 一期 26/26、`living-pet-relationship` 36/36、`context-management-strategy` 已落地；TTS 仍搁置。长对话上下文遗忘已修复（见 §11 与文末「已知问题与待办」）。
+当前进度：P0–P3 与验收材料已落地（OpenSpec tasks 全勾选）；`novel-writing-studio` 一期 26/26、`living-pet-relationship` 36/36、`context-management-strategy` 已落地；`episode-memory-importance-trimming`（episode 自动沉淀 + 消息级重要性裁剪）与 `assistant-markdown-rendering`（助手 Markdown 渲染）已落地；TTS 仍搁置。长对话上下文遗忘已修复（见 §11 与文末「已知问题与待办」）。
 
 ## 技术亮点（可写简历）
 
@@ -258,11 +261,26 @@ persona-first 的语义是"关系以人设既定设定为准"。若只做渲染�
 **面试一句话收束：**  
 「上下文压缩必须基于**裁剪前的完整历史**触发；把『裁剪』放在『摘要判断』之前，会让压缩机制在真实调用路径里静默失效——这种 bug 要靠端到端路径的回归测试才能拦住。」
 
+### 12. 对话事实自动沉淀 + 消息级重要性裁剪 + 助手 Markdown 渲染（上下文工程收尾）
+
+- **对话关键事实自动 episode 沉淀**（`episodeDistiller.ts` + `episodeConfig.ts`）：每轮回复完成后主进程**非阻塞**（串行队列 + AbortController）调 `DeepSeekProvider.completeText` 从"尚未沉淀"的对话片段抽取关键事实，结构化 `{"episodes":[...]}` 容错解析（仿关系演化 `parseCandidates`），写入 `type=episode` 记忆（带 `sourceSessionId`/`sourceMessageIds` 溯源）；**触发闸门** = 关键事实意图命中（`hasKeyFactIntent`）或累计未沉淀消息达阈值 + 间隔限频，普通闲聊零 LLM 调用；与既有 fact/episode 按 `scoreMemoryItem` 相似度去重；`assertSafeMemoryContent` 拒敏感；`data/config/episode-config.json` 可开关。抽取失败只日志、绝不影响聊天。
+- **消息级重要性**（`messageImportance.ts`）：`ChatMessage` 增写入期启发式 `importance`（1–3，关键事实/提问/长消息/数字加权，助手带成功工具调用加分，默认 2；旧 `chat-data.json` 加载补齐）；纯函数可单测。
+- **重要性加权裁剪**：`trimContext`/`trimToBudget` 统一为 `trimContextWeighted`——**近期窗口逐字保留 + 窗口外按 importance 高→低补齐、输出保序、恒保最新一条**；`context-config.json` 增 `importanceTrim`（默认 true）与 `recentWindowChars`（默认 0.7·budget）。重要早期事实不再被闲聊顶掉。
+- **助手回复 Markdown 安全渲染**（`src/chat/MarkdownView.tsx` + `chat.css`）：`react-markdown` + `remark-gfm` 渲染助手消息（标题/列表/代码块/表格/引用/链接，`<a target=_blank rel=noreferrer>`），用户消息保持纯文本；**流式期逐字纯文本、完成态一次渲染**（`message.status` 已给信号）；raw HTML 由渲染器**默认转义**为纯文本，不产生可执行 DOM 节点（符合 CSP `script-src 'self'`）；渲染异常回退纯文本。CSS：`pre-wrap` 限定到纯文本路径，新增 `.markdown-body` 全套排版。
+- **测试**：`messageImportance.test.ts`（打分 + 加权裁剪）+ `episodeDistiller.test.ts`（触发/闲聊/禁用/非法 JSON/去重/敏感）+ `MarkdownView.test.tsx`（渲染/转义/表格/链接）+ 4 条 eval 场景；离线 eval 累计 **37/37**，`npm test` 201 通过。
+
+**面试可答：**
+- 为什么 episode 不靠模型显式 `remember_fact`？模型一旦漏写事实就永久丢失；后台抽取 + 触发闸门让"关键事实不漏、平凡闲聊不烧 token"。
+- 为什么重要性用启发式而非 LLM 打分？每轮 LLM 打分太贵；写入期启发式 + 后台 episode 抽取分工——裁剪用便宜信号，语义沉淀用长周期 LLM。
+- 为什么流式期不渲染 Markdown？每 token 全量 parse + 滚动抖动收益低；完成态一次渲染，`message.status` 已提供信号。
+- 为什么 raw HTML 转义而非 sanitizer？react-markdown 默认把 HTML 转成纯文本，从根上避免 LLM 输出进 DOM；比维护 DOMPurify allowlist 更省。
+
 ## 3 分钟面试陈述稿（可背）
 
 我做的是一个 Windows 桌面智能体，不是单纯聊天框。架构上 Electron 主进程跑 DeepSeek 流式调用和 LangGraph 图：先召回人设与长期记忆，再规划工具，经白名单执行后生成回复。  
 工程上我强调三点：第一，工具可注册、可开关，记忆和本地提醒都走同一套边界，并有调用链日志和耗时；第二，用户画像跨角色共享，角色口吻跟人设走、会话按模型隔离，避免串戏；第三，记忆与知识库都走 Hybrid 检索（BM25 + 本地 BGE 向量 + RRF 融合），RAG 带引用溯源，再用离线评测盯工具正确率和检索命中率。  
-在此基础上我还做了独立小说工坊：把长篇现实向需要的叙事状态（角色、知情差、伏笔账本）外置到 StoryStore，写章走 assemble → draft → StateDiff → Guard → 人审 Accept，Accept 才晋升 Canon，数据和聊天记忆严格隔离——这是把同一套 Agent/检索能力复用到更复杂、更长周期的创作场景。还给桌宠本体加了**活的关系状态**：好感温度随对话实时增减、三种策略化注入、固有设定的慢速演化经人审才生效——让角色会成长，而人设文件始终是用户手写、系统永不改写的 canon。
+在此基础上我还做了独立小说工坊：把长篇现实向需要的叙事状态（角色、知情差、伏笔账本）外置到 StoryStore，写章走 assemble → draft → StateDiff → Guard → 人审 Accept，Accept 才晋升 Canon，数据和聊天记忆严格隔离——这是把同一套 Agent/检索能力复用到更复杂、更长周期的创作场景。还给桌宠本体加了**活的关系状态**：好感温度随对话实时增减、三种策略化注入、固有设定的慢速演化经人审才生效——让角色会成长，而人设文件始终是用户手写、系统永不改写的 canon。  
+上下文工程上，我在滚动摘要与历史检索之外又收了两环：对话关键事实**自动 episode 沉淀**到长期记忆（非阻塞抽取、触发闸门、去重），以及**消息级重要性加权裁剪**——超预算时窗口外高重要性消息优先保留，不让重要早期事实被闲聊顶掉；聊天界面则让助手回复以安全的 Markdown 呈现（仅助手消息、流式期纯文本、raw HTML 转义），用户消息保持纯文本。
 
 ## 面试速答（项目级）
 
@@ -276,7 +294,7 @@ A：多人格下「角色人设 vs 用户记忆」拆分，以及把工具从写
 A：落在真实桌面进程模型（IPC、凭据、多窗、本地调度与通知），有明确白名单与持久化边界，并按秋招标准补齐观测、检索、RAG 与 eval，形成可讲清的工程闭环。
 
 **Q：下一步还做什么？**  
-A：Agent 主线、小说工坊一期、活的关系状态与分层上下文工程均已交付（工具平台、Hybrid 检索、confirm 闸门、Accept 闸门、全书导出、好感/演化人审、滚动会话摘要、`search_history` 包级历史检索）。长对话上下文遗忘已修复（见 §11）。后续可选：对话关键事实自动 episode 沉淀、消息级重要性加权裁剪、sqlite-vec 替换 JSON 向量库、小说章摘要分层（章→卷）、助手 Markdown 渲染；TTS 因显存限制继续搁置。
+A：Agent 主线、小说工坊一期、活的关系状态、分层上下文工程、对话关键事实自动 episode 沉淀、消息级重要性加权裁剪与助手 Markdown 渲染均已交付（工具平台、Hybrid 检索、confirm 闸门、Accept 闸门、全书导出、好感/演化人审、滚动会话摘要、`search_history` 包级历史检索、episode 自动沉淀、importance 加权裁剪、Markdown 渲染）。长对话上下文遗忘已修复（见 §11）。后续可选：sqlite-vec 替换 JSON 向量库、小说章摘要分层（章→卷）、消息级重要性让 LLM 语义打分、对话级向量索引；TTS 因显存限制继续搁置。
 
 ## 已知问题与待办（持续更新）
 
@@ -297,7 +315,7 @@ A：Agent 主线、小说工坊一期、活的关系状态与分层上下文工�
 - ✅ 上下文占用水位可观测（IPC + 聊天窗指示）
 - ✅ RAG 检索开关：知识库面板一键关闭对话内知识库检索，减少无关上下文占用（不影响记忆与历史检索）
 - ✅ 回归单测 + 5 条 eval 场景，离线 eval **33/33**
-- 未做（另行立项）：对话关键事实自动 episode 沉淀到长期记忆、消息级重要性加权裁剪
+- ✅（已另行立项落地，见 §12）对话关键事实自动 episode 沉淀到长期记忆、消息级重要性加权裁剪
 
 ## 维护记录
 
@@ -315,3 +333,6 @@ A：Agent 主线、小说工坊一期、活的关系状态与分层上下文工�
 - 2026-08-01：完成 `living-pet-relationship`（活的关系状态）：好感温度 0–100 + 五段阶段、`update_relationship` 工具与意图路由、policy 三模式注入、慢速人审演化、关系面板；与记忆/小说零耦合，36 单测 + 4 eval
 - 2026-08-02：归档 `harden-agent-retrieval-ux` / `novel-writing-studio` / `living-pet-relationship` 并同步主规格（新增 10 个 capability，specs 28 通过）；诊断出长对话上下文遗忘问题（会话摘要触发失效 + 24k 字符硬裁）
 - 2026-08-02：完成 `context-management-strategy`（分层上下文工程）：会话摘要改为基于裁剪前完整历史的滚动摘要、预算 24k→40k 可配置、`search_history` 包级 BM25 历史检索、上下文占用水位可观测、RAG 检索开关；长对话上下文遗忘修复，eval 33/33；更新 §11 与简历第 6 条
+- 2026-08-03：完成 `episode-memory-importance-trimming`（上下文工程收尾）：对话关键事实自动 episode 沉淀（非阻塞抽取 + 触发闸门 + 间隔限频 + 去重 + 配置开关）、`ChatMessage` 消息级重要性启发式打分、`trimContextWeighted` 重要性加权裁剪（近期窗口逐字 + 窗口外按 importance 补齐）；eval 33→37，`npm test` 201 通过；新增 §12 与简历第 7、8 条
+- 2026-08-03：完成 `assistant-markdown-rendering`：助手消息 react-markdown + remark-gfm 安全渲染（仅助手、流式期纯文本、raw HTML 转义），用户消息保持纯文本；CSS 限定 pre-wrap 并新增 `.markdown-body` 排版；新增 §12 与简历第 9 条
+- 2026-08-03：完成 `chat-ui-warm-theme`（聊天窗暖色陪伴风）：CSS 变量对齐桌宠（`--ink/--panel/--accent` 等）、会话区暖米白 + 侧栏暖深 + 头部/输入区磨砂、助手消息显示当前 Live2D 包头像（modelUrl + 首字符回退）、流式闪烁光标、气泡入场动画、工具时间线胶囊 + 状态点、引用块卡片、会话列表按日期分组、消息区窄栏居中

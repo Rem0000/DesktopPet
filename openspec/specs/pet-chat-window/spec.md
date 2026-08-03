@@ -26,6 +26,14 @@
 - **WHEN** 用户仅输入空白字符并尝试发送
 - **THEN** 系统不创建消息且不发起 Agent 请求
 
+#### Scenario: 暖色气泡呈现
+- **WHEN** 消息列表渲染用户与桌宠消息
+- **THEN** 用户气泡为 accent 渐变、桌宠气泡为暖米白，均使用大圆角与柔和阴影
+
+#### Scenario: 助手 Markdown 回复
+- **WHEN** 助手消息完成且内容为 Markdown
+- **THEN** 气泡按 Markdown 呈现，用户仍可滚动阅读完整消息列表
+
 ### Requirement: 流式回复与取消
 聊天窗口 SHALL 增量展示 Agent 回复，SHALL 允许用户停止当前生成，并 SHALL 防止同一会话内并发提交造成消息顺序错乱。
 
@@ -171,3 +179,69 @@
 #### Scenario: 加载中提示
 - **WHEN** Embedding 模型状态为 loading
 - **THEN** 聊天窗显示加载中横幅或等价提示
+
+### Requirement: 助手消息 Markdown 渲染
+聊天窗口 SHALL 将助手（assistant）消息内容渲染为安全的 Markdown，支持标题、无序/有序列表、引用、行内代码、围栏代码块、表格、链接与粗斜体。用户（user）消息 MUST 保持纯文本渲染。渲染 MUST 不将未识别 HTML 透传进 DOM（LLM 输出视为不可信输入），且 MUST 不引入 `dangerouslySetInnerHTML` 或 raw-HTML 透传插件。
+
+#### Scenario: 渲染结构化 Markdown
+- **WHEN** 助手消息内容包含标题、列表、代码块、表格与行内代码
+- **THEN** 气泡内按 Markdown 语义渲染这些元素，而非原样显示 Markdown 符号
+
+#### Scenario: 用户消息保持纯文本
+- **WHEN** 用户消息内容包含 Markdown 标记字符
+- **THEN** 该消息仍按纯文本显示，不做 Markdown 渲染
+
+#### Scenario: 原始 HTML 不进入 DOM
+- **WHEN** 助手消息内容包含 HTML 标签或脚本
+- **THEN** 渲染结果将其作为纯文本转义显示，不产生可执行节点
+
+### Requirement: 流式期间保持纯文本
+助手消息在流式生成期间 MUST 以逐字纯文本追加显示（不做 Markdown 解析），仅在消息完成、取消或错误（内容已定格）后渲染为 Markdown。
+
+#### Scenario: 生成中逐字显示
+- **WHEN** 助手消息处于 streaming 状态且正在追加 token
+- **THEN** 气泡以纯文本逐字显示已生成内容，不执行 Markdown 解析
+
+#### Scenario: 完成后渲染 Markdown
+- **WHEN** 助手消息状态变为 complete
+- **THEN** 气泡以 Markdown 渲染完整内容
+
+### Requirement: 渲染失败回退
+当 Markdown 渲染抛错或无法解析时，系统 SHALL 回退为纯文本显示助手内容，MUST NOT 显示空白或中断消息列表。
+
+#### Scenario: 畸形内容回退
+- **WHEN** 助手消息内容为畸形 Markdown 且渲染抛错
+- **THEN** 气泡以纯文本显示该内容，消息列表正常
+
+### Requirement: 暖色陪伴风主题
+聊天窗口 SHALL 采用与桌宠本体一致的暖色视觉语言：会话区暖米白底、面板（头部/输入区/侧栏）半透明磨砂、大圆角与柔和阴影。配色 MUST 通过 CSS 变量（`--ink/--panel/--accent/--soft/--line`）表达，与桌宠 `src/styles.css` 对齐。
+
+#### Scenario: 主题变量生效
+- **WHEN** 用户打开聊天窗口
+- **THEN** 会话区呈现暖米白背景，侧栏/头部/输入区为暖色系面板，气泡与控件使用统一 accent 色
+
+#### Scenario: 变量驱动配色
+- **WHEN** 修改 `:root` 中的 CSS 变量
+- **THEN** 整个聊天窗配色随之变化，无需改动组件类
+
+### Requirement: 助手消息展示当前模型头像
+聊天窗口 SHALL 在助手消息旁展示当前活跃 Live2D 包的头像；当包提供 `modelUrl` 时以图片显示，缺失或加载失败时 SHALL 回退为包名首字符的圆形标识。
+
+#### Scenario: 展示包头像
+- **WHEN** 助手回复某条消息且当前活跃 Live2D 包存在
+- **THEN** 消息旁显示该包头像（图片或回退圆形标识）
+
+#### Scenario: 头像加载失败回退
+- **WHEN** 包 `modelUrl` 缺失或图片加载失败
+- **THEN** 头像以包名首字符的圆形底显示，不中断消息呈现
+
+### Requirement: 流式回复光标
+助手消息在流式生成期间 SHALL 在末尾显示闪烁光标，提示生成进行中。
+
+#### Scenario: 流式期间显示光标
+- **WHEN** 助手消息处于 streaming 状态且正在追加内容
+- **THEN** 消息末尾出现闪烁光标
+
+#### Scenario: 完成后光标消失
+- **WHEN** 助手消息状态变为 complete
+- **THEN** 光标消失，消息呈现最终内容
