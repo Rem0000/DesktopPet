@@ -20,6 +20,8 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const PLAN_TOOL_INSTRUCTION = [
   '你正在决定是否需要调用工具（长期记忆、本地提醒或知识库检索）。',
   '当用户询问本地文档、项目说明、已导入资料或知识库细节时，优先调用 search_knowledge；不要编造文档内容。',
+  '当用户询问最新新闻、实时数据、外部网站或本地知识库没有的实时/外部信息时，调用 web_search 搜索互联网；搜索结果引用 MUST 逐字取自工具返回内容，禁止编造。普通闲聊不要调用。',
+  '当用户需要特定网页的正文内容、且 web_search 已返回该 URL 时，调用 web_fetch 抓取（执行前需用户确认）；通常先 web_search 拿到 URL 再抓取，不要凭记忆编造网页内容。',
   '当用户引用更早的对话（如「我之前说过…」「上次你说…」）且当前上下文中缺少该细节时，调用 search_history 检索本模型的历史会话；普通闲聊不要调用。',
   '同一条用户消息若同时包含知识库问题与明确的记忆写入请求：记忆内容不依赖检索结果时可同轮并行调用 search_knowledge 与 remember_fact/update_profile；需根据检索结果再写时先调用 search_knowledge。',
   '仅当用户明确表达了应跨模型长期保留的画像（update_profile）或事实/约定（remember_fact）时才调用记忆工具；同一事实不要重复调用多次；禁止只用口头声称已记住。',

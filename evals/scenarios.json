@@ -220,5 +220,23 @@
     "category": "context",
     "description": "超预算时窗口外高重要性消息优先保留",
     "assert": "importance_trim_priority"
+  },
+  {
+    "id": "web-search-registered",
+    "category": "tool",
+    "description": "web_search 注册为 safe 并进入规划集合",
+    "assert": "web_search_registered"
+  },
+  {
+    "id": "web-fetch-confirm-level",
+    "category": "tool",
+    "description": "web_fetch 注册为 confirm 风险级",
+    "assert": "web_fetch_confirm_level"
+  },
+  {
+    "id": "web-fetch-ssrf-reject",
+    "category": "tool",
+    "description": "web_fetch 校验阶段拒绝 localhost/私有 IP",
+    "assert": "web_fetch_ssrf_reject"
   }
 ]

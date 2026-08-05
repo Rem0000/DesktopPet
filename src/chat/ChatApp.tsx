@@ -178,6 +178,12 @@ export function ChatApp() {
     if (!next) return
 
     setSession(next)
+    // 切换会话时只保留目标会话自身的进行中请求标记，清除其余残留，
+    // 避免历史会话的 activeRequests 泄漏导致输入框被 disabled 卡住。
+    setActiveRequests((current) => {
+      const mine = current[sessionId]
+      return mine === undefined ? {} : { [sessionId]: mine }
+    })
 
     try {
       const traces = await window.petAPI.tools.listTracesBySession(sessionId)
@@ -204,6 +210,8 @@ export function ChatApp() {
     if (!id) throw new Error('当前没有活跃模型')
     const created = await window.petAPI.chat.createSession(id)
     setSession(created)
+    // 新会话无任何进行中请求，清空残留标记，确保输入框立即可用
+    setActiveRequests({})
     await refreshSessions(id)
     return created
   }, [packageId, refreshSessions])
@@ -467,9 +475,28 @@ export function ChatApp() {
     if (!window.confirm('删除这个会话及其全部消息？')) return
     await window.petAPI.chat.deleteSession(sessionId)
     const remaining = await refreshSessions()
+    // 无论删除的是否当前会话，都清理该会话的进行中请求标记，
+    // 避免残留 activeRequests 使输入框被 disabled 卡住。
+    setActiveRequests((current) => {
+      if (!(sessionId in current)) return current
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
     if (session?.id !== sessionId) return
-    if (remaining[0]) await openSession(remaining[0].id)
-    else await createSession()
+    try {
+      if (remaining[0]) await openSession(remaining[0].id)
+      else await createSession()
+    } catch (error) {
+      // 切换失败时兜底新建，避免 session 停在已删除会话导致输入框禁用
+      setSession(null)
+      try {
+        await createSession()
+      } catch (createError) {
+        setNotice(`删除后新建会话失败：${errorText(createError)}`)
+      }
+      setNotice(`切换会话失败：${errorText(error)}`)
+    }
   }
 
   const retry = (failedMessage: ChatMessage) => {

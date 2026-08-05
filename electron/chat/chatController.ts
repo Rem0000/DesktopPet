@@ -27,6 +27,7 @@ import { ChatStore } from './chatStore'
 import { DeepSeekProvider, validateProviderConfig } from './deepSeekProvider'
 import { MemoryService } from './memoryService'
 import { MemoryStore } from './memoryStore'
+import { DailyMeetStore } from './dailyMeetStore'
 import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
 import { loadContextConfig } from './contextConfig'
 import { EpisodeDistiller } from './episodeDistiller'
@@ -34,6 +35,9 @@ import { loadEpisodeConfig } from './episodeConfig'
 import { KnowledgeService } from './knowledgeService'
 import { KnowledgeStore } from './knowledgeStore'
 import { HistorySearchService } from './historySearch'
+import { loadTavilyConfig } from './tavilyConfig'
+import { TavilyService } from './tavilyService'
+import { registerTavilyTools } from './tavilyTools'
 import { summarizeToolInput } from './redact'
 import { defaultToolRegistry } from './toolRegistry'
 import { ToolTraceStore } from './toolTraceStore'
@@ -225,6 +229,8 @@ export async function initializeChatController(
   await store.initialize()
   const memoryStore = new MemoryStore(memoryDir)
   await memoryStore.initialize()
+  const dailyMeetStore = new DailyMeetStore(memoryDir)
+  await dailyMeetStore.initialize()
   const reminderStore = new ReminderStore(remindersDir)
   await reminderStore.initialize()
   chatStoreRef = store
@@ -254,6 +260,10 @@ export async function initializeChatController(
     (messages, config, signal) => provider.summarize(messages, config, signal),
     readPackagePersona,
     (packageId) => relationshipService.readState(packageId),
+    {
+      getLastMeetDate: (packageId) => dailyMeetStore.getLastMeetDate(packageId),
+      setMeetToday: (packageId, date) => dailyMeetStore.setMeetToday(packageId, date),
+    },
   )
   memoryService.registerDefaultTools()
 
@@ -286,6 +296,13 @@ export async function initializeChatController(
     () => resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
   )
   historySearchService.registerDefaultTools()
+
+  // Tavily 联网搜索/抓取：仅在有 API Key 时注册（env 或 data/config/tavily-config.json）
+  const tavilyConfig = await loadTavilyConfig(configDir)
+  if (tavilyConfig) {
+    const tavilyService = new TavilyService(tavilyConfig.apiKey)
+    registerTavilyTools(tavilyService, defaultToolRegistry)
+  }
 
   const toolOverrides = await loadToolConfigOverrides(configDir)
   defaultToolRegistry.applyOverrides(toolOverrides)
@@ -395,6 +412,8 @@ export async function initializeChatController(
   )
   ipcMain.handle('chat:sessions:delete', async (_event, rawId: unknown) => {
     const sessionId = requireId(rawId, '会话标识')
+    // 先取消该会话进行中的请求，再删除会话，避免主进程 activeRequests/activeSessions 残留
+    service.cancelForSession(sessionId)
     const deleted = await store.deleteSession(sessionId)
     if (deleted) await memoryStore.deleteSessionSummary(sessionId)
     return deleted

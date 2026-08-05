@@ -336,3 +336,5 @@ A：Agent 主线、小说工坊一期、活的关系状态、分层上下文工�
 - 2026-08-03：完成 `episode-memory-importance-trimming`（上下文工程收尾）：对话关键事实自动 episode 沉淀（非阻塞抽取 + 触发闸门 + 间隔限频 + 去重 + 配置开关）、`ChatMessage` 消息级重要性启发式打分、`trimContextWeighted` 重要性加权裁剪（近期窗口逐字 + 窗口外按 importance 补齐）；eval 33→37，`npm test` 201 通过；新增 §12 与简历第 7、8 条
 - 2026-08-03：完成 `assistant-markdown-rendering`：助手消息 react-markdown + remark-gfm 安全渲染（仅助手、流式期纯文本、raw HTML 转义），用户消息保持纯文本；CSS 限定 pre-wrap 并新增 `.markdown-body` 排版；新增 §12 与简历第 9 条
 - 2026-08-03：完成 `chat-ui-warm-theme`（聊天窗暖色陪伴风）：CSS 变量对齐桌宠（`--ink/--panel/--accent` 等）、会话区暖米白 + 侧栏暖深 + 头部/输入区磨砂、助手消息显示当前 Live2D 包头像（modelUrl + 首字符回退）、流式闪烁光标、气泡入场动画、工具时间线胶囊 + 状态点、引用块卡片、会话列表按日期分组、消息区窄栏居中
+- 2026-08-03：完成 `tavily-web-search-fetch`（联网搜索 + 网页抓取）：`web_search`（safe，Tavily /search，结构化命中 + AI 摘要）+ `web_fetch`（confirm，Tavily /extract 抓正文，URL 校验拒绝 localhost/私有 IP 防 SSRF）；Tavily Key 走 env `TAVILY_API_KEY` 或 `data/config/tavily-config.json`，仅主进程持有；`formatToolResultsForModel` 硬约束（逐字引用、空结果禁编造）；eval 37→40，`npm test` 214 通过
+- 2026-08-05：完成 `daily-first-meeting-state`（每日首次见面状态）：按包持久化"当日是否已首见"（`data/memory/daily-meet.json`），首次对话注入"今天第一次见面按人设完成首见行为"、同日后续注入"已见过除非被问否则不重复"；顺带在系统提示注入当前本地日期，修复模型编造日期的问题

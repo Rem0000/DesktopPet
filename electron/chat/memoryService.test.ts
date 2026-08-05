@@ -464,4 +464,81 @@ describe('MemoryService', () => {
     const emptyQuery = await service.retrieve('', 3)
     expect(emptyQuery[0]?.pinned).toBe(true)
   })
+
+  it('无 dailyMeet 回调时零注入', async () => {
+    const { service } = await createMemoryService()
+    const assembled = await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: [message('1', 's1', 'user', '你好')],
+      query: '你好',
+      config,
+      signal: new AbortController().signal,
+      budget: 4_000,
+    })
+    expect(assembled.systemPrompt).not.toContain('今日首见')
+    expect(assembled.systemPrompt).not.toContain('今日状态')
+  })
+
+  it('首次对话注入今日首见引导 + 日期', async () => {
+    const { store, tools } = await createMemoryService()
+    let lastMeet: string | null = null
+    const service = new MemoryService(
+      store,
+      tools,
+      undefined,
+      () => '',
+      undefined,
+      {
+        getLastMeetDate: () => lastMeet,
+        setMeetToday: async (_packageId, date) => {
+          lastMeet = date
+        },
+        now: () => new Date('2026-08-05T10:00:00'),
+      },
+    )
+    const assembled = await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: [message('1', 's1', 'user', '你好')],
+      query: '你好',
+      config,
+      signal: new AbortController().signal,
+      budget: 4_000,
+    })
+    expect(assembled.systemPrompt).toContain('今日首见')
+    expect(assembled.systemPrompt).toContain('2026年8月5日')
+    expect(lastMeet).toBe('2026-08-05')
+  })
+
+  it('同日后续对话注入已见引导，不重复首见', async () => {
+    const { store, tools } = await createMemoryService()
+    let lastMeet: string | null = '2026-08-05'
+    const service = new MemoryService(
+      store,
+      tools,
+      undefined,
+      () => '',
+      undefined,
+      {
+        getLastMeetDate: () => lastMeet,
+        setMeetToday: async (_packageId, date) => {
+          lastMeet = date
+        },
+        now: () => new Date('2026-08-05T14:00:00'),
+      },
+    )
+    const assembled = await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages: [message('1', 's1', 'user', '又来了')],
+      query: '又来了',
+      config,
+      signal: new AbortController().signal,
+      budget: 4_000,
+    })
+    expect(assembled.systemPrompt).toContain('今日状态')
+    expect(assembled.systemPrompt).toContain('除非主人主动询问')
+    expect(assembled.systemPrompt).not.toContain('今日首见')
+  })
 })

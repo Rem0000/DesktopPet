@@ -59,7 +59,7 @@ Windows 透明置顶桌宠：**导入完整 Live2D 模型包 + 独立 DeepSeek �
 | `data/logs/` | 应用日志 |
 | `data/models/` | BGE-Small-ZH-v1.5 Embedding 权重缓存 |
 | `data/reminders/` | 本地提醒 |
-| `data/config/` | 工具开关（`tool-config.json`）、上下文预算（`context-config.json`）、episode 自动沉淀（`episode-config.json`）等配置 |
+| `data/config/` | 工具开关（`tool-config.json`）、上下文预算（`context-config.json`）、episode 自动沉淀（`episode-config.json`）、Tavily 联网配置（`tavily-config.json`，也可用环境变量 `TAVILY_API_KEY`）等配置 |
 
 小说数据位于 `data/novels/<bookId>/`，每本书独立；Accept 章节不会写入用户聊天记忆，聊天召回也不会读小说正文。
 

@@ -128,6 +128,13 @@ export class ChatService {
     }
   }
 
+  /** 取消指定会话的全部进行中请求（删除会话时调用，防止 activeRequests 残留） */
+  cancelForSession(sessionId: string): void {
+    for (const active of this.activeRequests.values()) {
+      if (active.sessionId === sessionId) active.controller.abort()
+    }
+  }
+
   private handleToolEvent(active: ActiveRequest, event: ToolBoundaryEvent): void {
     if (event.phase === 'start') {
       active.sender.send({

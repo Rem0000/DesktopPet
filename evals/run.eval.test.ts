@@ -750,6 +750,59 @@ async function runAssert(assert: string): Promise<void> {
         expect(ids).not.toContain('1')
       })
       return
+    case 'web_search_registered':
+      await withTempDir(async () => {
+        const { TavilyService } = await import('../electron/chat/tavilyService')
+        const { registerTavilyTools } = await import('../electron/chat/tavilyTools')
+        const registry = new ToolRegistry()
+        const service = new TavilyService(
+          'test-key',
+          'https://api.tavily.com',
+          async () => new Response('{"results":[]}', { status: 200 }),
+        )
+        registerTavilyTools(service, registry)
+        expect(registry.get('web_search')).toBeTruthy()
+        expect(registry.getRiskLevel('web_search')).toBe('safe')
+        expect(
+          registry.listForPlanning().some((tool) => tool.name === 'web_search'),
+        ).toBe(true)
+      })
+      return
+    case 'web_fetch_confirm_level':
+      await withTempDir(async () => {
+        const { TavilyService } = await import('../electron/chat/tavilyService')
+        const { registerTavilyTools } = await import('../electron/chat/tavilyTools')
+        const registry = new ToolRegistry()
+        const service = new TavilyService(
+          'test-key',
+          'https://api.tavily.com',
+          async () => new Response('{"results":[]}', { status: 200 }),
+        )
+        registerTavilyTools(service, registry)
+        expect(registry.get('web_fetch')).toBeTruthy()
+        expect(registry.getRiskLevel('web_fetch')).toBe('confirm')
+      })
+      return
+    case 'web_fetch_ssrf_reject':
+      await withTempDir(async () => {
+        const { TavilyService } = await import('../electron/chat/tavilyService')
+        const { registerTavilyTools } = await import('../electron/chat/tavilyTools')
+        const registry = new ToolRegistry()
+        const service = new TavilyService(
+          'test-key',
+          'https://api.tavily.com',
+          async () => new Response('{"results":[]}', { status: 200 }),
+        )
+        registerTavilyTools(service, registry)
+        const tool = registry.get('web_fetch')!
+        // validate 阶段拦截私有/本地 URL（SSRF 防护），不触达 execute
+        expect(() => tool.validate({ url: 'http://localhost:3000' })).toThrow(/本地|内网/)
+        expect(() => tool.validate({ url: 'http://192.168.1.1/' })).toThrow(/本地|内网/)
+        expect(tool.validate({ url: 'https://example.com/article' })).toEqual({
+          url: 'https://example.com/article',
+        })
+      })
+      return
     default:
       throw new Error(`未知断言：${assert}`)
   }

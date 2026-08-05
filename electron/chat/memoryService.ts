@@ -12,6 +12,7 @@ import { embedQuery } from '../retrieval/embeddingService'
 import { hybridSearch } from '../retrieval/hybridSearch'
 import { trimContextWeighted } from './messageImportance'
 import { buildRelationshipLayer } from '../relationship/relationshipRender'
+import { localDateKey, localDateLabel } from './dateUtils'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import type { MemoryStore } from './memoryStore'
 import { assertSafeMemoryContent } from './memoryStore'
@@ -167,6 +168,14 @@ export class MemoryService {
     private readonly readRelationship?: (
       packageId: string,
     ) => Promise<RelationshipState | null>,
+    private readonly dailyMeet?: {
+      /** 该包最近一次"首次见面"的本地日期（YYYY-MM-DD），null 表示今日未首见 */
+      getLastMeetDate: (packageId: string) => string | null
+      /** 记录该包今日已首次见面 */
+      setMeetToday: (packageId: string, date: string) => Promise<void>
+      /** 注入当前本地日期，便于测试 */
+      now?: () => Date
+    },
   ) {}
 
   /** 供工具规划注入：近期可遗忘条目（不含 preference） */
@@ -508,11 +517,12 @@ export class MemoryService {
     const relationshipLayer = relationshipState
       ? buildRelationshipLayer(relationshipState, relationshipState.policy)
       : ''
+    const dailyMeetBlock = await this.buildDailyMeetBlock(input.packageId)
     const memoryBlock = formatMemoryBlock(recalledItems, Math.floor(budget * MEMORY_BUDGET_RATIO))
     const summaryBlock = sessionSummary
       ? truncateText(`【会话摘要】\n${sessionSummary}`, Math.floor(budget * SUMMARY_BUDGET_RATIO))
       : ''
-    const systemPrompt = [rolePrompt, relationshipLayer, memoryBlock, summaryBlock]
+    const systemPrompt = [rolePrompt, relationshipLayer, dailyMeetBlock, memoryBlock, summaryBlock]
       .filter(Boolean)
       .join('\n\n')
 
@@ -522,6 +532,23 @@ export class MemoryService {
     )
     const recentMessages = trimToBudget(input.messages, remaining)
     return { systemPrompt, recentMessages, recalledItems, sessionSummary }
+  }
+
+  /**
+   * 每日首见状态块：首次对话注入"今天第一次见面"引导 + 当前日期；
+   * 同日后续注入"已见过，除非被问否则不重复" + 当前日期。无 dailyMeet 回调时不注入。
+   */
+  private async buildDailyMeetBlock(packageId: string): Promise<string> {
+    if (!this.dailyMeet) return ''
+    const now = this.dailyMeet.now?.() ?? new Date()
+    const todayKey = localDateKey(now)
+    const dateLabel = localDateLabel(now)
+    const lastMeet = this.dailyMeet.getLastMeetDate(packageId)
+    if (lastMeet === todayKey) {
+      return `【今日状态】今天是 ${dateLabel}。你今天已经见过主人了，除非主人主动询问，否则不要重复今日首次见面的行为。`
+    }
+    await this.dailyMeet.setMeetToday(packageId, todayKey)
+    return `【今日首见】今天是 ${dateLabel}，这是你今天第一次见到主人。请按人设完成首次见面的行为（如汇报当日衣着等），并保持人设一致。`
   }
 }
 

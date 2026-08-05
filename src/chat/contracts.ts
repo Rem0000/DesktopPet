@@ -103,6 +103,44 @@ export type HistorySearchInput = {
   topK: number
 }
 
+/** Tavily /search 命中：供 web_search 工具输出与硬约束 */
+export type WebSearchHit = {
+  title: string
+  url: string
+  content: string
+  score?: number
+  publishedDate?: string
+}
+
+export type WebSearchOutput = {
+  ok: boolean
+  hits: WebSearchHit[]
+  answer?: string
+  empty: boolean
+}
+
+export type WebFetchOutput = {
+  ok: boolean
+  url: string
+  content: string
+  empty: boolean
+}
+
+export type TavilyConfigFile = {
+  version: 1
+  apiKey?: string
+}
+
+/** 每日首次见面状态：按包记录最近一次"首次见面"的本地日期 */
+export type DailyMeetRecord = {
+  lastMeetDate: string
+}
+
+export type DailyMeetDatabase = {
+  version: 1
+  byPackage: Record<string, DailyMeetRecord>
+}
+
 /** 上下文占用观测：预算、已用估算与占比 */
 export type ContextUsage = {
   budgetCharacters: number

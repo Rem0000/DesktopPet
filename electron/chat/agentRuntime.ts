@@ -267,8 +267,17 @@ export function formatToolResultsForModel(toolResults: string[], userText = ''):
           error?: string
           errorCode?: string
           output?: {
-            hits?: Array<{ excerpt?: string; createdAt?: string; sessionId?: string }>
+            hits?: Array<{
+              excerpt?: string
+              createdAt?: string
+              sessionId?: string
+              title?: string
+              url?: string
+              content?: string
+            }>
             empty?: boolean
+            answer?: string
+            content?: string
           }
         }
         const tool = parsed.tool ?? 'unknown'
@@ -287,6 +296,43 @@ export function formatToolResultsForModel(toolResults: string[], userText = ''):
             lines.push(
               '- search_history：历史中未找到相关内容。回复 MUST 如实说明未找到，禁止编造或声称存在。',
             )
+          }
+          continue
+        }
+        if (parsed.tool === 'web_search' && parsed.ok) {
+          hasSuccess = true
+          const hits = parsed.output?.hits
+          if (Array.isArray(hits) && hits.length > 0) {
+            lines.push(
+              `- web_search：搜索到 ${hits.length} 条结果，如下（引用 MUST 逐字取自以下 content，不得补充结果外的内容）：`,
+            )
+            for (const hit of hits) {
+              const title = typeof hit.title === 'string' ? hit.title : ''
+              const content = typeof hit.content === 'string' ? hit.content : ''
+              const url = typeof hit.url === 'string' ? hit.url : ''
+              lines.push(`  · ${title}（${url}）：${content.replace(/\s+/g, ' ').trim()}`)
+            }
+            const answer = parsed.output?.answer
+            if (typeof answer === 'string' && answer.trim()) {
+              lines.push(`- web_search AI 摘要：${answer.replace(/\s+/g, ' ').trim()}`)
+            }
+          } else {
+            lines.push(
+              '- web_search：未搜索到相关内容。回复 MUST 如实说明未搜到，禁止编造或声称存在。',
+            )
+          }
+          continue
+        }
+        if (parsed.tool === 'web_fetch' && parsed.ok) {
+          hasSuccess = true
+          const content = parsed.output?.content
+          if (typeof content === 'string' && content.trim()) {
+            lines.push(
+              '- web_fetch：抓取到网页正文如下（内容 MUST 基于以下原文，不得虚构页面中没有的信息）：',
+            )
+            lines.push(`  ${content.replace(/\s+/g, ' ').trim()}`)
+          } else {
+            lines.push('- web_fetch：未能提取到网页正文。回复 MUST 如实说明，禁止编造页面内容。')
           }
           continue
         }
