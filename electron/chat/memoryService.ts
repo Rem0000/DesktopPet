@@ -17,6 +17,8 @@ import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import type { MemoryStore } from './memoryStore'
 import { assertSafeMemoryContent } from './memoryStore'
 import type { ToolRegistry } from './toolRegistry'
+import { markUntrustedBlock } from './untrustedContent'
+import type { GuardConfig } from '../../src/chat/contracts'
 
 export type AssembledContext = {
   systemPrompt: string
@@ -92,6 +94,7 @@ export async function retrieveMemories(
   topK = 8,
   now = new Date(),
   getVector: (id: string) => number[] | undefined,
+  searchVector?: (queryVector: number[], topK: number) => Array<{ id: string; score: number }>,
 ): Promise<MemoryItem[]> {
   const active = items.filter(
     (item) =>
@@ -122,6 +125,7 @@ export async function retrieveMemories(
       topK,
       embedQuery,
       getVector,
+      searchVector,
       metadataBoost: (entry) => {
         const item = entry.metadata?.item as MemoryItem | undefined
         return item ? memoryMetadataBoost(item, now) : 0
@@ -176,6 +180,7 @@ export class MemoryService {
       /** 注入当前本地日期，便于测试 */
       now?: () => Date
     },
+    private readonly guardConfig?: GuardConfig,
   ) {}
 
   /** 供工具规划注入：近期可遗忘条目（不含 preference） */
@@ -375,6 +380,7 @@ export class MemoryService {
       topK,
       now,
       (id) => this.store.getVector(id),
+      (queryVector, k) => this.store.searchVector(queryVector, k),
     )
   }
 
@@ -518,7 +524,11 @@ export class MemoryService {
       ? buildRelationshipLayer(relationshipState, relationshipState.policy)
       : ''
     const dailyMeetBlock = await this.buildDailyMeetBlock(input.packageId)
-    const memoryBlock = formatMemoryBlock(recalledItems, Math.floor(budget * MEMORY_BUDGET_RATIO))
+    const memoryBlock = formatMemoryBlock(
+      recalledItems,
+      Math.floor(budget * MEMORY_BUDGET_RATIO),
+      this.guardConfig,
+    )
     const summaryBlock = sessionSummary
       ? truncateText(`【会话摘要】\n${sessionSummary}`, Math.floor(budget * SUMMARY_BUDGET_RATIO))
       : ''
@@ -557,7 +567,11 @@ function truncateText(text: string, max: number): string {
   return `${text.slice(0, Math.max(0, max - 1))}…`
 }
 
-function formatMemoryBlock(items: MemoryItem[], maxChars: number): string {
+function formatMemoryBlock(
+  items: MemoryItem[],
+  maxChars: number,
+  guard?: GuardConfig,
+): string {
   if (items.length === 0) return ''
   const ordered = [...items].sort(
     (a, b) =>
@@ -569,7 +583,14 @@ function formatMemoryBlock(items: MemoryItem[], maxChars: number): string {
   for (const item of ordered) {
     const label = item.key ? `${item.type}:${item.key}` : item.type
     const pin = item.pinned ? '📌' : ''
-    const line = `- ${pin}(${item.importance}) ${label}：${item.content}`
+    // 记忆内容用户可写（注入面）：guard 开启时包成不可信区
+    const guardedContent = markUntrustedBlock('memory', item.content, {
+      enabled: guard?.enabled !== false,
+      maxChars: guard?.maxChars,
+      maxItems: guard?.maxItems,
+      label: guard?.label,
+    }).split('\n').join(' ')
+    const line = `- ${pin}(${item.importance}) ${label}：${guardedContent}`
     if (used + line.length + 1 > maxChars && lines.length > 0) break
     lines.push(line)
     used += line.length + 1

@@ -12,6 +12,9 @@
     "test": "vitest run --config vitest.config.ts",
     "eval:retrieval": "vitest run --config vitest.config.ts evals/run.retrieval.eval.test.ts",
     "eval:retrieval:real": "vitest run --config vitest.config.ts evals/run.retrieval.eval.test.ts",
+    "eval:ann": "vitest run --config vitest.config.ts evals/run.ann.eval.test.ts",
+    "eval:judge": "vitest run --config vitest.config.ts evals/run.judge.eval.test.ts",
+    "eval:judge:real": "vitest run --config vitest.config.ts evals/run.judge.eval.test.ts",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },

@@ -64,6 +64,48 @@ export type ProviderRuntimeConfig = {
   baseUrl: string
   model: string
   apiKey: string
+  /** 提供方标识（如 'deepseek'）；为多 Provider 扩展预留，默认 'deepseek' */
+  providerKind?: string
+}
+
+/** 工具规划输出：pendingToolCalls 由 plan 节点消费 */
+export type PendingToolCall = {
+  name: string
+  input: unknown
+}
+
+/**
+ * 统一的大模型 Provider 接口（Chat 主链路由 AgentRuntime 消费）。
+ * planToolCalls 可选：不支持的实现返回 { toolCalls: [] }（AgentRuntime 已防御）。
+ * 新增 Provider 时实现本接口并在 providerFactory.createProvider 注册分支即可。
+ */
+export type ChatProvider = {
+  readonly kind: string
+  stream: (
+    messages: ChatMessage[],
+    config: ProviderRuntimeConfig,
+    signal: AbortSignal,
+    onToken: (token: string) => void,
+    systemPrompt?: string,
+  ) => Promise<string>
+  planToolCalls?: (
+    messages: ChatMessage[],
+    config: ProviderRuntimeConfig,
+    signal: AbortSignal,
+    systemPrompt: string,
+    tools: AgentTool[],
+  ) => Promise<{ toolCalls: PendingToolCall[]; text?: string }>
+  summarize: (
+    messages: ChatMessage[],
+    config: ProviderRuntimeConfig,
+    signal: AbortSignal,
+  ) => Promise<string>
+  completeText: (
+    systemPrompt: string,
+    userPrompt: string,
+    config: ProviderRuntimeConfig,
+    signal: AbortSignal,
+  ) => Promise<string>
 }
 
 export type SendChatInput = {
@@ -158,6 +200,22 @@ export type EpisodeConfig = {
   intervalMessages?: number
   /** 单次抽取最多写入的 episode 条数 */
   maxEpisodes?: number
+}
+
+/**
+ * Prompt 注入防护配置（data/config/guard-config.json）。
+ * 把「外部内容」（web 结果/检索命中/用户可写的记忆）与系统指令在 prompt 里显式隔离——
+ * 提示层面的纵深防御，非沙箱。
+ */
+export type GuardConfig = {
+  version: 1
+  enabled?: boolean
+  /** 单块外部内容长度上限（字符） */
+  maxChars?: number
+  /** 单块最多条目数 */
+  maxItems?: number
+  /** 边界头文案 */
+  label?: string
 }
 
 /** episode 抽取遥测：观察触发/写入/跳过原因 */

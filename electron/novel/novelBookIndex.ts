@@ -5,7 +5,7 @@ import { embedQuery, embedTexts, getEmbeddingModelStatus } from '../retrieval/em
 import { hybridSearch } from '../retrieval/hybridSearch'
 import { chunkMarkdown } from '../retrieval/markdownChunker'
 import { EmbeddingModelError } from '../retrieval/types'
-import { VectorStore } from '../retrieval/vectorStore'
+import { AnnVectorStore } from '../retrieval/annVectorStore'
 import type { ChapterSummary } from '../../src/novel/contracts'
 import type { NovelStoryStore } from './novelStoryStore'
 
@@ -58,14 +58,14 @@ export class NovelBookIndex {
   private readonly bookId: string
   private readonly indexDir: string
   private readonly indexPath: string
-  private readonly vectorStore: VectorStore
+  private readonly vectorStore: AnnVectorStore
   private index = emptyIndex('')
 
   constructor(bookId: string, bookDir: string) {
     this.bookId = bookId
     this.indexDir = path.join(bookDir, 'index')
     this.indexPath = path.join(this.indexDir, 'chunks.json')
-    this.vectorStore = new VectorStore(path.join(this.indexDir, 'vectors.json'))
+    this.vectorStore = new AnnVectorStore(path.join(this.indexDir, 'vectors.json'))
     this.index = emptyIndex(bookId)
   }
 
@@ -263,6 +263,7 @@ export class NovelBookIndex {
         topK,
         embedQuery,
         getVector: (id) => this.vectorStore.get(id),
+        searchVector: (queryVector, k) => this.vectorStore.searchVector(queryVector, k),
       },
     )
 

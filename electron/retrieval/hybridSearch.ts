@@ -63,15 +63,21 @@ export async function hybridSearch(
   const sparseScores = normalizeScores(new Map(sparseHits.map((hit) => [hit.id, hit.score])))
 
   const queryVector = await options.embedQuery(query)
-  const vectorHits = corpus
-    .map((item) => {
-      const vector = options.getVector(item.id)
-      if (!vector) return null
-      return { id: item.id, score: cosineSimilarity(queryVector, vector) }
-    })
-    .filter((hit): hit is { id: string; score: number } => hit !== null)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, vectorTopK)
+  // 向量召回：有 searchVector（ANN 索引）走近似查询，否则回退全量余弦扫描
+  let vectorHits: Array<{ id: string; score: number }>
+  if (options.searchVector) {
+    vectorHits = options.searchVector(queryVector, vectorTopK)
+  } else {
+    vectorHits = corpus
+      .map((item) => {
+        const vector = options.getVector(item.id)
+        if (!vector) return null
+        return { id: item.id, score: cosineSimilarity(queryVector, vector) }
+      })
+      .filter((hit): hit is { id: string; score: number } => hit !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, vectorTopK)
+  }
   const vectorScores = normalizeScores(new Map(vectorHits.map((hit) => [hit.id, hit.score])))
 
   const sparseSet = new Set(sparseHits.map((hit) => hit.id))

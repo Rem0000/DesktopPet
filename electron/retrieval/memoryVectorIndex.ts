@@ -1,13 +1,14 @@
 import path from 'node:path'
 import { embedTexts } from './embeddingService'
-import { VectorStore } from './vectorStore'
+import { AnnVectorStore } from './annVectorStore'
 import { EmbeddingModelError } from './types'
+import type { VectorSearchHit } from './vectorStore'
 
 export class MemoryVectorIndex {
-  private readonly store: VectorStore
+  private readonly store: AnnVectorStore
 
   constructor(storageDirectory: string) {
-    this.store = new VectorStore(path.join(storageDirectory, 'vectors.json'))
+    this.store = new AnnVectorStore(path.join(storageDirectory, 'vectors.json'))
   }
 
   async initialize(): Promise<void> {
@@ -20,6 +21,11 @@ export class MemoryVectorIndex {
 
   has(memoryId: string): boolean {
     return this.store.has(memoryId)
+  }
+
+  /** ANN 向量召回：供 MemoryService 的 hybridSearch 注入 searchVector */
+  searchVector(queryVector: number[], topK = 20): VectorSearchHit[] {
+    return this.store.searchVector(queryVector, topK)
   }
 
   async upsert(memoryId: string, text: string): Promise<void> {

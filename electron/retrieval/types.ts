@@ -28,6 +28,11 @@ export type HybridSearchOptions = {
   minScore?: number
   embedQuery: (query: string) => Promise<number[]>
   getVector: (id: string) => number[] | undefined
+  /**
+   * ANN 向量召回回调：传入时为近似最近邻（如 HNSW）查询，取代 hybridSearch 内部的
+   * 全量余弦扫描；未传入时回退现状全量扫描（行为不变）。
+   */
+  searchVector?: (queryVector: number[], topK: number) => Array<{ id: string; score: number }>
   metadataBoost?: (item: RetrievalCorpusItem) => number
 }
 

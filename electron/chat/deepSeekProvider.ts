@@ -9,6 +9,7 @@ import type {
   AgentTool,
   ChatError,
   ChatMessage,
+  ChatProvider,
   ProviderConfigInput,
   ProviderRuntimeConfig,
 } from '../../src/chat/contracts'
@@ -120,7 +121,7 @@ function parseToolCalls(raw: unknown, allowed: Set<string>): PendingToolCall[] {
   return calls
 }
 
-export function normalizeProviderError(error: unknown): ChatError {
+export function normalizeProviderError(error: unknown, kind = 'DeepSeek'): ChatError {
   const candidate = error as {
     status?: number
     name?: string
@@ -135,27 +136,29 @@ export function normalizeProviderError(error: unknown): ChatError {
     return { code: 'cancelled', message: '已停止生成', retryable: true }
   }
   if (status === 401 || status === 403) {
-    return { code: 'authentication', message: 'DeepSeek API Key 无效或无权限', retryable: false }
+    return { code: 'authentication', message: `${kind} API Key 无效或无权限`, retryable: false }
   }
   if (status === 429) {
     return { code: 'rate_limit', message: '请求过于频繁，请稍后重试', retryable: true }
   }
   if (name.includes('Timeout') || code.includes('TIMEOUT')) {
-    return { code: 'timeout', message: 'DeepSeek 请求超时', retryable: true }
+    return { code: 'timeout', message: `${kind} 请求超时`, retryable: true }
   }
   if (typeof status === 'number' && status >= 500) {
-    return { code: 'server', message: 'DeepSeek 服务暂时不可用', retryable: true }
+    return { code: 'server', message: `${kind} 服务暂时不可用`, retryable: true }
   }
   if (
     ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN'].includes(code) ||
     name.includes('Connection')
   ) {
-    return { code: 'network', message: '无法连接 DeepSeek 服务', retryable: true }
+    return { code: 'network', message: `无法连接 ${kind} 服务`, retryable: true }
   }
   return { code: 'unknown', message: '生成回复失败，请稍后重试', retryable: true }
 }
 
-export class DeepSeekProvider {
+export class DeepSeekProvider implements ChatProvider {
+  readonly kind = 'deepseek' as const
+
   async stream(
     messages: ChatMessage[],
     config: ProviderRuntimeConfig,

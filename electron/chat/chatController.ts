@@ -24,12 +24,14 @@ import { ReminderStore } from '../reminders/reminderStore'
 import { AgentRuntime } from './agentRuntime'
 import { ChatService, ChatServiceError } from './chatService'
 import { ChatStore } from './chatStore'
-import { DeepSeekProvider, validateProviderConfig } from './deepSeekProvider'
+import { validateProviderConfig } from './deepSeekProvider'
+import { createProvider } from './providerFactory'
 import { MemoryService } from './memoryService'
 import { MemoryStore } from './memoryStore'
 import { DailyMeetStore } from './dailyMeetStore'
 import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
 import { loadContextConfig } from './contextConfig'
+import { loadGuardConfig } from './guardConfig'
 import { EpisodeDistiller } from './episodeDistiller'
 import { loadEpisodeConfig } from './episodeConfig'
 import { KnowledgeService } from './knowledgeService'
@@ -225,6 +227,9 @@ export async function initializeChatController(
   const remindersDir = resolveDataSubpath('reminders')
   const configDir = resolveDataSubpath('config')
 
+  // Prompt 注入防护：data/config/guard-config.json 可覆盖，缺失回退默认
+  const guardConfig = await loadGuardConfig(configDir)
+
   const store = new ChatStore(chatDir, safeStorage)
   await store.initialize()
   const memoryStore = new MemoryStore(memoryDir)
@@ -235,7 +240,7 @@ export async function initializeChatController(
   await reminderStore.initialize()
   chatStoreRef = store
   memoryStoreRef = memoryStore
-  const provider = new DeepSeekProvider()
+  const provider = createProvider()
 
   const relationshipStore = new RelationshipStore(resolveDataSubpath('relationships'))
   await relationshipStore.initialize()
@@ -264,6 +269,7 @@ export async function initializeChatController(
       getLastMeetDate: (packageId) => dailyMeetStore.getLastMeetDate(packageId),
       setMeetToday: (packageId, date) => dailyMeetStore.setMeetToday(packageId, date),
     },
+    guardConfig,
   )
   memoryService.registerDefaultTools()
 
@@ -337,6 +343,7 @@ export async function initializeChatController(
       return relationshipService.isUpdateAllowed(packageId)
     },
     { importanceTrim, recentWindowChars },
+    guardConfig,
   )
   const service = new ChatService(
     store,

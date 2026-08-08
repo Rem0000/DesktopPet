@@ -12,7 +12,7 @@ import { embedQuery, embedTexts } from '../retrieval/embeddingService'
 import { hybridSearch } from '../retrieval/hybridSearch'
 import { chunkMarkdown } from '../retrieval/markdownChunker'
 import { extractSearchTerms } from '../retrieval/tokenize'
-import { VectorStore } from '../retrieval/vectorStore'
+import { AnnVectorStore } from '../retrieval/annVectorStore'
 import { atomicWriteTextFile } from '../fsAtomic'
 import { EmbeddingModelError } from '../retrieval/types'
 
@@ -96,7 +96,7 @@ export class KnowledgeStore {
   private readonly root: string
   private readonly docsDir: string
   private readonly indexPath: string
-  private readonly vectorStore: VectorStore
+  private readonly vectorStore: AnnVectorStore
   private index = emptyIndex()
   private initialized = false
   private writeQueue: Promise<void> = Promise.resolve()
@@ -106,7 +106,7 @@ export class KnowledgeStore {
     this.root = storageDirectory
     this.docsDir = path.join(this.root, 'documents')
     this.indexPath = path.join(this.root, 'index.json')
-    this.vectorStore = new VectorStore(path.join(this.root, 'vectors.json'))
+    this.vectorStore = new AnnVectorStore(path.join(this.root, 'vectors.json'))
   }
 
   async initialize(): Promise<void> {
@@ -248,6 +248,7 @@ export class KnowledgeStore {
       topK,
       embedQuery,
       getVector: (id) => this.vectorStore.get(id),
+      searchVector: (queryVector, k) => this.vectorStore.searchVector(queryVector, k),
       metadataBoost: (item) => {
         const headingPath = (item.metadata?.headingPath as string[] | undefined) ?? []
         const joined = headingPath.join(' ').toLowerCase()

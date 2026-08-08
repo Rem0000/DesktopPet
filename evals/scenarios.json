@@ -238,5 +238,17 @@
     "category": "tool",
     "description": "web_fetch 校验阶段拒绝 localhost/私有 IP",
     "assert": "web_fetch_ssrf_reject"
+  },
+  {
+    "id": "guard-web-result-isolation",
+    "category": "guard",
+    "description": "web_fetch 外部正文进 prompt 前被不可信区包裹",
+    "assert": "guard_web_result_isolation"
+  },
+  {
+    "id": "guard-memory-not-instruction",
+    "category": "guard",
+    "description": "用户可写的记忆内容进 prompt 前被不可信区包裹",
+    "assert": "guard_memory_not_instruction"
   }
 ]

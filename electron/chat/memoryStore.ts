@@ -121,6 +121,11 @@ export class MemoryStore {
     return this.vectorIndex.get(memoryId)
   }
 
+  /** ANN 向量召回：供 MemoryService 的 hybridSearch 注入 searchVector */
+  searchVector(queryVector: number[], topK = 20) {
+    return this.vectorIndex.searchVector(queryVector, topK)
+  }
+
   async rebuildVectorIndex(): Promise<void> {
     this.assertInitialized()
     const entries = this.getActiveItems().map((item) => ({
