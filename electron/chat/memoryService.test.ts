@@ -327,6 +327,36 @@ describe('MemoryService', () => {
     expect(assembled.recentMessages.length).toBeLessThan(messages.length)
   })
 
+  it('可见窗口刚溢出即触发摘要（总量仍未超预算，消除丢消息无摘要区）', async () => {
+    const { service } = await createMemoryService()
+    const messages: ChatMessage[] = []
+    for (let i = 0; i < 55; i += 1) {
+      messages.push(
+        message(
+          `m${i}`,
+          's1',
+          i % 2 === 0 ? 'user' : 'assistant',
+          `第 ${i} 轮对话 ${'x'.repeat(100)}`,
+        ),
+      )
+    }
+    // 总量 ≈5500 仍低于预算 6000，但可见窗口余量（≈4.9k）已把最早消息挤出 →
+    // 摘要应在窗口溢出时触发，而不是等总量超预算后才生成
+    const total = messages.reduce((sum, m) => sum + m.content.length, 0)
+    expect(total).toBeLessThan(6_000)
+    const assembled = await service.assemble({
+      sessionId: 's1',
+      packageId: PKG,
+      messages,
+      query: '测试',
+      config,
+      signal: new AbortController().signal,
+      budget: 6_000,
+    })
+    expect(assembled.sessionSummary).toBeTruthy()
+    expect(assembled.systemPrompt).toContain('早期对话要点')
+  })
+
   it('AgentRuntime 基于裁剪前完整历史触发会话摘要', async () => {
     const { tools, service } = await createMemoryService()
     let seenSystemPrompt = ''

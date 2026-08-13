@@ -25,6 +25,10 @@ export type AssembledContext = {
   recentMessages: ChatMessage[]
   recalledItems: MemoryItem[]
   sessionSummary?: string
+  /** 长期记忆检索块的字符数（供上下文占用拆分观测；无召回时为 0） */
+  memoryCharacters?: number
+  /** 会话摘要块的字符数（供上下文占用拆分观测） */
+  summaryCharacters?: number
 }
 
 const DEFAULT_BUDGET = 24_000
@@ -414,32 +418,17 @@ export class MemoryService {
   async ensureSessionSummary(input: {
     sessionId: string
     messages: ChatMessage[]
-    budget: number
+    /** 被可见窗口丢弃的消息：摘要 MUST 恰好覆盖它们，消除「丢消息无摘要」区 */
+    early: ChatMessage[]
+    /** 可见窗口消息 id 集合（供闸门计算未覆盖早期内容） */
+    recentIds: Set<string>
     config: ProviderRuntimeConfig
     signal: AbortSignal
   }): Promise<string | undefined> {
-    const complete = input.messages.filter(
-      (message) => message.status === 'complete' && message.content.trim(),
-    )
-    const total = complete.reduce((sum, message) => sum + message.content.length, 0)
-    if (total <= input.budget) return this.store.getSummary(input.sessionId)?.summary
-
-    const keepChars = Math.floor(input.budget * (1 - SUMMARY_BUDGET_RATIO - MEMORY_BUDGET_RATIO))
-    let used = 0
-    const recent: ChatMessage[] = []
-    for (let index = complete.length - 1; index >= 0; index -= 1) {
-      const message = complete[index]
-      if (!message) continue
-      if (recent.length > 0 && used + message.content.length > keepChars) break
-      recent.unshift(message)
-      used += message.content.length
-    }
-    const recentIds = new Set(recent.map((message) => message.id))
-    const early = complete.filter((message) => !recentIds.has(message.id))
-    if (early.length === 0) return this.store.getSummary(input.sessionId)?.summary
+    if (input.early.length === 0) return this.store.getSummary(input.sessionId)?.summary
 
     const existing = this.store.getSummary(input.sessionId)
-    const lastEarly = early.at(-1)
+    const lastEarly = input.early.at(-1)
     if (
       existing &&
       lastEarly &&
@@ -451,25 +440,25 @@ export class MemoryService {
     // 沿用旧摘要（缺失的近期细节由 recentMessages 原样呈现）。旧实现因窗口
     // 每轮滑动导致 coveredUntilMessageId 永不命中，使超预算会话每轮都阻塞等摘要。
     if (existing && lastEarly) {
-      const coveredIndex = complete.findIndex(
+      const coveredIndex = input.messages.findIndex(
         (message) => message.id === existing.coveredUntilMessageId,
       )
       const uncoveredEarlyChars =
         coveredIndex >= 0
-          ? complete
+          ? input.messages
               .slice(coveredIndex + 1)
-              .filter((message) => !recentIds.has(message.id))
+              .filter((message) => !input.recentIds.has(message.id))
               .reduce((sum, message) => sum + message.content.length, 0)
-          : early.reduce((sum, message) => sum + message.content.length, 0)
+          : input.early.reduce((sum, message) => sum + message.content.length, 0)
       if (uncoveredEarlyChars < SUMMARY_REGEN_MIN_CHARS) {
         return existing.summary
       }
     }
 
-    let summary = fallbackSummaryFromMessages(early)
+    let summary = fallbackSummaryFromMessages(input.early)
     if (this.summarize) {
       try {
-        const generated = await this.summarize(early, input.config, input.signal)
+        const generated = await this.summarize(input.early, input.config, input.signal)
         if (generated.trim()) summary = generated.trim()
       } catch {
         // keep fallback
@@ -508,13 +497,6 @@ export class MemoryService {
     const budget = input.budget ?? DEFAULT_BUDGET
     const recalledItems = await this.recall(input.query)
     await this.store.touchAccessed(recalledItems.map((item) => item.id))
-    const sessionSummary = await this.ensureSessionSummary({
-      sessionId: input.sessionId,
-      messages: input.messages,
-      budget,
-      config: input.config,
-      signal: input.signal,
-    })
 
     const persona = this.readPersona(input.packageId).trim()
     const rolePrompt = persona || DEFAULT_SYSTEM_PROMPT
@@ -529,19 +511,49 @@ export class MemoryService {
       Math.floor(budget * MEMORY_BUDGET_RATIO),
       this.guardConfig,
     )
-    const summaryBlock = sessionSummary
-      ? truncateText(`【会话摘要】\n${sessionSummary}`, Math.floor(budget * SUMMARY_BUDGET_RATIO))
-      : ''
-    const systemPrompt = [rolePrompt, relationshipLayer, dailyMeetBlock, memoryBlock, summaryBlock]
+    const systemPromptBase = [rolePrompt, relationshipLayer, dailyMeetBlock, memoryBlock]
       .filter(Boolean)
       .join('\n\n')
 
+    // 摘要槽始终预留 0.12·budget（与 SUMMARY_BUDGET_RATIO 一致），使可见窗口边界
+    // 不随「是否已有摘要」漂移；否则摘要首次出现会让窗口收缩，挤出更多未概括消息。
+    const summaryReserved = Math.floor(budget * SUMMARY_BUDGET_RATIO)
     const remaining = Math.max(
       1_000,
-      budget - systemPrompt.length - Math.floor(budget * 0.05),
+      budget - systemPromptBase.length - summaryReserved - Math.floor(budget * 0.05),
     )
     const recentMessages = trimToBudget(input.messages, remaining)
-    return { systemPrompt, recentMessages, recalledItems, sessionSummary }
+    const recentIds = new Set(recentMessages.map((message) => message.id))
+    const early = input.messages.filter(
+      (message) =>
+        message.status === 'complete' &&
+        message.content.trim() &&
+        !recentIds.has(message.id),
+    )
+
+    // 触发点 = 可见窗口首次溢出（early 非空），而非总量超预算：
+    // 消息刚被挤出窗口就立刻概括，不存在「既不在窗口里也没被摘要」的丢消息区。
+    const sessionSummary = await this.ensureSessionSummary({
+      sessionId: input.sessionId,
+      messages: input.messages,
+      early,
+      recentIds,
+      config: input.config,
+      signal: input.signal,
+    })
+    const summaryBlock = sessionSummary
+      ? truncateText(`【会话摘要】\n${sessionSummary}`, summaryReserved)
+      : ''
+    const systemPrompt = summaryBlock ? `${systemPromptBase}\n\n${summaryBlock}` : systemPromptBase
+
+    return {
+      systemPrompt,
+      recentMessages,
+      recalledItems,
+      sessionSummary,
+      memoryCharacters: memoryBlock.length,
+      summaryCharacters: summaryBlock.length,
+    }
   }
 
   /**
