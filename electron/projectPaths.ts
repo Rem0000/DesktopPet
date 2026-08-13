@@ -28,6 +28,22 @@ export function resolveLayerPacksRoot(): string {
   )
 }
 
+/**
+ * 技能目录根：开发态为项目根 skills/，打包态为 resources/skills/（extraResources）。
+ * 技能随版本控制并打进安装包，与 live2d 资源一致。
+ */
+export function resolveSkillsRoot(): string {
+  if (process.env.DESKTOP_PET_SKILLS) return process.env.DESKTOP_PET_SKILLS
+  try {
+    if (app.isPackaged && process.resourcesPath) {
+      return path.join(process.resourcesPath, 'skills')
+    }
+  } catch {
+    // vitest 等无 Electron 运行时
+  }
+  return path.join(resolveProjectRoot(), 'skills')
+}
+
 export type DataSubpath =
   | 'chat'
   | 'memory'

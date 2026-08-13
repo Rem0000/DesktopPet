@@ -82,6 +82,11 @@ export class ToolRegistry {
     if (!tool) return undefined
     return resolveRiskLevel(tool)
   }
+
+  /** 注销工具(技能卸载用)。幂等:未注册时静默。 */
+  unregister(name: string): void {
+    this.tools.delete(name)
+  }
 }
 
 export const defaultToolRegistry = new ToolRegistry()

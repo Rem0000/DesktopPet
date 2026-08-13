@@ -198,8 +198,8 @@ const api = {
       ipcRenderer.invoke('chat:sessions:create', packageId),
     getActivePackageId: (): Promise<string | null> =>
       ipcRenderer.invoke('chat:active-package-id'),
-    getContextUsage: (): Promise<ContextUsage | null> =>
-      ipcRenderer.invoke('chat:context:usage'),
+    getContextUsage: (sessionId: string): Promise<ContextUsage | null> =>
+      ipcRenderer.invoke('chat:context:usage', sessionId),
     getRagEnabled: (): Promise<{ enabled: boolean }> =>
       ipcRenderer.invoke('chat:rag:get'),
     setRagEnabled: (enabled: boolean): Promise<{ enabled: boolean }> =>
@@ -256,6 +256,19 @@ const api = {
       ipcRenderer.invoke('tools:traces:by-session', sessionId),
     getTraceStats: (): Promise<ToolTraceStats[]> =>
       ipcRenderer.invoke('tools:traces:stats'),
+  },
+  skills: {
+    list: (): Promise<{
+      indices: Array<{
+        id: string
+        name: string
+        description: string
+        trigger: string
+        priority: number
+        active: boolean
+        loaded: boolean
+      }>
+    }> => ipcRenderer.invoke('skills:list'),
   },
   knowledge: {
     list: (): Promise<KnowledgeDocumentSummary[]> =>

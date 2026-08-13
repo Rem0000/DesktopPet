@@ -189,11 +189,24 @@ export type DailyMeetDatabase = {
   byPackage: Record<string, DailyMeetRecord>
 }
 
-/** 上下文占用观测：预算、已用估算与占比 */
+/** 上下文按来源拆分（对齐 Claude Code 的 Messages / System tools / System prompt / Memory files / Skills） */
+export type ContextUsagePart = {
+  key: 'messages' | 'systemTools' | 'systemPrompt' | 'memory' | 'skills'
+  /** 来源名：中文展示标签（如「消息」），Memory/Skills 仅在有内容时出现 */
+  label: string
+  characters: number
+}
+
+/** 上下文占用观测：预算、按来源拆分的已用估算与总占比 */
 export type ContextUsage = {
   budgetCharacters: number
+  /** 全部占用合计（含 system prompt / 工具目录 / 消息窗口） */
   usedCharacters: number
   ratio: number
+  /** 各来源拆分；total 恒等于 usedCharacters */
+  parts: ContextUsagePart[]
+  /** 是否有过至少一次组装观测（false 时渲染端显示「暂无统计」而非 0%） */
+  observed: boolean
 }
 
 /** 对话关键事实自动 episode 沉淀配置（data/config/episode-config.json） */

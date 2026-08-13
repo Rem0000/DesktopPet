@@ -2,15 +2,20 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import type {
   AgentTool,
   ChatMessage,
-  ContextUsage,
   ProviderRuntimeConfig,
 } from '../../src/chat/contracts'
+import {
+  ContextUsageTracker,
+  emptyContextSectionBreakdown,
+  type ContextObservation,
+} from './contextUsage'
 import { DEFAULT_SYSTEM_PROMPT } from './deepSeekProvider'
 import { isContextDebugEnabled, logContext } from './contextDebug'
 import { trimContextWeighted } from './messageImportance'
 import type { MemoryService } from './memoryService'
 import { classifyToolError, summarizeToolInput } from './redact'
 import type { ToolRegistry } from './toolRegistry'
+import type { SkillRouter } from './skills/types'
 import { markUntrustedBlock, markUntrustedList } from './untrustedContent'
 import type { ChatProvider, GuardConfig } from '../../src/chat/contracts'
 
@@ -245,6 +250,49 @@ function emitPlanFailure(
  * guardConfig 提供时，web/web_fetch/search_history 等外部原文用不可信区隔离
  * （Prompt 注入防护，见 untrustedContent.ts）；缺省时行为不变。
  */
+/**
+ * 技能类工具的 execute 结果必须在每轮回填给模型，否则模型失去游戏真值、
+ * 只能编造进度（见猜数字 91→75 状态的整场假游戏）。这里按工具约定识别并
+ * 格式化其输出字段，通用 ok:true 分支不会吞掉这些结果。
+ */
+const SKILL_RESULT_TOOLS = new Set(['generate_secret', 'compare_guess', 'end_game'])
+
+function isSkillResultTool(tool: string): boolean {
+  return SKILL_RESULT_TOOLS.has(tool)
+}
+
+function formatSkillResultLine(tool: string, output: unknown): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as Record<
+    string,
+    unknown
+  >
+  const pick = (key: string): string | undefined => {
+    const v = o[key]
+    return typeof v === 'string' && v.trim() ? v.trim() : typeof v === 'number' ? String(v) : undefined
+  }
+  if (tool === 'compare_guess') {
+    const status = pick('status')
+    const attempts = pick('attempts')
+    const suffix = pick('message')
+    if (status) {
+      const verdict =
+        status === 'correct' ? '猜中' : status === 'high' ? '偏大' : status === 'low' ? '偏小' : status
+      let line = `compare_guess 结果：${verdict}`
+      if (attempts) line += `（第 ${attempts} 次猜测）`
+      if (suffix) line += `。${suffix}`
+      return line
+    }
+    if (suffix) return `compare_guess：${suffix}`
+  }
+  if (tool === 'generate_secret') {
+    // 谜底绝不回填给模型：否则模型会自以为知道答案而不再调用 compare_guess，
+    // 进而编造大小提示与胜负。模型必须通过 compare_guess 获取每轮真实结果。
+    return 'generate_secret：谜底已生成（仅存在于工具状态中，你不可见；每次用户给出数字，必须先调用 compare_guess 获取真实判定，禁止凭记忆或推测判断大小）'
+  }
+  if (tool === 'end_game') return 'end_game：猜数字游戏已结束，状态已清理'
+  return `- ${tool}：成功`
+}
+
 export function formatToolResultsForModel(
   toolResults: string[],
   userText = '',
@@ -350,6 +398,11 @@ export function formatToolResultsForModel(
           }
           continue
         }
+        if (parsed.ok && isSkillResultTool(tool)) {
+          hasSuccess = true
+          lines.push(formatSkillResultLine(tool, parsed.output))
+          continue
+        }
         if (parsed.ok) {
           hasSuccess = true
           lines.push(`- ${tool}：成功。可在回复中自然确认已完成，不要复述 JSON。`)
@@ -408,9 +461,6 @@ export function formatToolResultsForModel(
 }
 
 export class AgentRuntime {
-  /** 最近一次上下文组装占用（供 chat:context:usage IPC 观测） */
-  lastContextUsage?: ContextUsage
-
   constructor(
     private readonly provider: AgentProvider,
     private readonly tools: ToolRegistry,
@@ -424,7 +474,16 @@ export class AgentRuntime {
     private readonly trimOptions?: { importanceTrim: boolean; recentWindowChars: number },
     /** Prompt 注入防护配置：提供时外部工具原文以不可信区隔离 */
     private readonly guardConfig?: GuardConfig,
+    /** 技能路由钩子：recall 阶段命中技能时注入其规则文本 */
+    private readonly skillRouter?: SkillRouter,
+    /** 会话级上下文占用观测表（缺省时新建，供 chat:context:usage IPC 查询） */
+    private readonly contextUsageTracker = new ContextUsageTracker(),
   ) {}
+
+  /** 读取某会话最近一次上下文组装观测（供测试与 IPC 查询） */
+  getContextUsage(sessionId: string, packageId?: string): ContextObservation | undefined {
+    return this.contextUsageTracker.get(sessionId, packageId)
+  }
 
   async run(input: {
     sessionId: string
@@ -443,6 +502,9 @@ export class AgentRuntime {
     const budget = this.contextBudget
     const provider = this.provider
     const onToolEvent = input.onToolEvent
+    /** 本轮组装观测（recall/model/plan 各节点累加后统一写入 tracker） */
+    const usage = emptyContextSectionBreakdown()
+    let finalSystemPrompt = ''
 
     const planPending = async (
       state: typeof AgentState.State,
@@ -470,6 +532,8 @@ export class AgentRuntime {
               .map((item) => `- id=${item.id} | ${item.type} | ${item.content}`)
               .join('\n')}`
           : '\n\n【可遗忘记忆列表】当前为空；用户要求忘记时不要调用 forget_memory。'
+      // 工具目录占用（供上下文占用拆分）：规划提示里工具定义 + 遗忘列表
+      usage.systemToolsCharacters = JSON.stringify(registered.map((tool) => tool.parameters)).length
       try {
         const planned = await provider.planToolCalls(
           state.messages,
@@ -506,28 +570,45 @@ export class AgentRuntime {
         messages: trimContext(state.messages, budget, this.trimOptions),
       }))
       .addNode('recall', async (state) => {
-        if (!memory) {
-          return {
-            systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          }
-        }
         const query =
           [...state.messages].reverse().find((message) => message.role === 'user')
             ?.content ?? ''
-        // 会话摘要基于裁剪前完整历史（allMessages），可见窗口由 assemble 内部按预算裁剪
-        const assembled = await memory.assemble({
-          sessionId: state.sessionId,
-          packageId: input.packageId,
-          messages: state.allMessages ?? state.messages,
-          query,
-          config: input.config,
-          signal: input.signal,
-          budget,
-        })
-        return {
-          messages: assembled.recentMessages,
-          systemPrompt: assembled.systemPrompt,
+        let systemPrompt: string
+        let recentMessages: ChatMessage[] | undefined
+        if (!memory) {
+          systemPrompt = DEFAULT_SYSTEM_PROMPT
+        } else {
+          // 会话摘要基于裁剪前完整历史（allMessages），可见窗口由 assemble 内部按预算裁剪
+          const assembled = await memory.assemble({
+            sessionId: state.sessionId,
+            packageId: input.packageId,
+            messages: state.allMessages ?? state.messages,
+            query,
+            config: input.config,
+            signal: input.signal,
+            budget,
+          })
+          systemPrompt = assembled.systemPrompt
+          recentMessages = assembled.recentMessages
+          usage.memoryCharacters = assembled.memoryCharacters ?? 0
         }
+        if (this.skillRouter) {
+          const hit = await this.skillRouter.route(query, input.signal)
+          if (hit) {
+            usage.skillsCharacters = hit.rulesText.length
+            systemPrompt = `${systemPrompt}\n\n${hit.rulesText}`
+          }
+        }
+        // systemPrompt 内嵌了记忆块与技能文本：剔除这两部分避免重复计入，
+        // 使 systemPrompt 一项代表 人设/关系/每日状态/会话摘要 的固定部分。
+        usage.systemPromptCharacters = Math.max(
+          0,
+          systemPrompt.length - usage.memoryCharacters - usage.skillsCharacters,
+        )
+        finalSystemPrompt = systemPrompt
+        return recentMessages
+          ? { messages: recentMessages, systemPrompt }
+          : { systemPrompt }
       })
       .addNode('plan', async (state) => {
         if ((state.pendingToolCalls?.length ?? 0) > 0) {
@@ -710,16 +791,24 @@ export class AgentRuntime {
           this.guardConfig,
         )
         const finalPrompt = `${systemPrompt}${toolNote}`
-        const usedCharacters =
-          systemPrompt.length +
-          state.messages.reduce((sum, message) => sum + message.content.length, 0)
-        this.lastContextUsage = {
-          budgetCharacters: budget,
-          usedCharacters,
-          ratio: budget > 0 ? Math.min(1, usedCharacters / budget) : 0,
+        usage.messagesCharacters = state.messages.reduce(
+          (sum, message) => sum + message.content.length,
+          0,
+        )
+        const observation: ContextObservation = {
+          sessionId: state.sessionId,
+          packageId: input.packageId,
+          ...usage,
         }
+        this.contextUsageTracker.record(observation)
         // [TEMP-DEBUG] 观察上下文管理策略是否生效（写 UTF-8 文件避免 cmd 乱码），验证后删除
         if (isContextDebugEnabled()) {
+          const usedCharacters =
+            observation.systemPromptCharacters +
+            observation.systemToolsCharacters +
+            observation.skillsCharacters +
+            observation.memoryCharacters +
+            observation.messagesCharacters
           void logContext([
             {
               label: '预算/占用',
@@ -729,7 +818,7 @@ export class AgentRuntime {
               label: '窗口概况',
               content: `近期窗口消息数=${state.messages.length} 完整历史消息数=${state.allMessages?.length ?? '?'}`,
             },
-            { label: '系统提示词', content: finalPrompt },
+            { label: '系统提示词', content: finalSystemPrompt || finalPrompt },
             {
               label: '近期消息序列（角色[字符数]）',
               content: state.messages

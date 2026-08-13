@@ -11,7 +11,7 @@ import type {
   SpeechBubblePayload,
   ToolConfirmRequest,
 } from '../../src/chat/contracts'
-import { resolveDataSubpath, ensureDataDirs } from '../projectPaths'
+import { resolveDataSubpath, ensureDataDirs, resolveSkillsRoot } from '../projectPaths'
 import {
   ensureEmbeddingModelLoaded,
   getEmbeddingModelStatus,
@@ -31,6 +31,7 @@ import { MemoryStore } from './memoryStore'
 import { DailyMeetStore } from './dailyMeetStore'
 import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
 import { loadContextConfig } from './contextConfig'
+import { breakdownToUsage, ContextUsageTracker } from './contextUsage'
 import { loadGuardConfig } from './guardConfig'
 import { EpisodeDistiller } from './episodeDistiller'
 import { loadEpisodeConfig } from './episodeConfig'
@@ -43,6 +44,9 @@ import { registerTavilyTools } from './tavilyTools'
 import { summarizeToolInput } from './redact'
 import { defaultToolRegistry } from './toolRegistry'
 import { ToolTraceStore } from './toolTraceStore'
+import { SkillRegistry } from './skills/skillRegistry'
+import { createSkillRouter } from './skills/skillRouter'
+import { createReadSkillFileTool } from './skills/skillFileTool'
 import { RelationshipEvaluator } from '../relationship/relationshipEvaluator'
 import { initializeRelationshipController } from '../relationship/relationshipController'
 import { RelationshipService } from '../relationship/relationshipService'
@@ -67,6 +71,8 @@ function resolveToolConfirm(confirmId: string, confirmed: boolean): void {
 
 let chatStoreRef: ChatStore | null = null
 let memoryStoreRef: MemoryStore | null = null
+/** 会话级上下文占用观测表（初始化时赋值，删除会话/包时清理） */
+let contextUsageTrackerRef: ContextUsageTracker | null = null
 let reminderSchedulerRef: ReminderScheduler | null = null
 let relationshipStoreRef: RelationshipStore | null = null
 let relationshipEvaluatorRef: RelationshipEvaluator | null = null
@@ -109,6 +115,7 @@ export function startReminderScheduler(): void {
 export async function cascadeDeleteSessionsForPackage(packageId: string): Promise<void> {
   if (!chatStoreRef || !memoryStoreRef) return
   const removed = await chatStoreRef.deleteSessionsByPackageId(packageId)
+  for (const sessionId of removed) contextUsageTrackerRef?.deleteSession(sessionId)
   await memoryStoreRef.deleteSessionSummaries(removed)
   await deleteRelationshipForPackage(packageId)
 }
@@ -151,6 +158,7 @@ function requireProviderInput(value: unknown): ProviderConfigInput {
   return validateProviderConfig({
     baseUrl: input.baseUrl,
     model: input.model,
+    plannerModel: input.plannerModel,
     apiKey: input.apiKey,
   })
 }
@@ -310,6 +318,26 @@ export async function initializeChatController(
     registerTavilyTools(tavilyService, defaultToolRegistry)
   }
 
+  // Skills 技能模块：扫描技能目录生成索引（常驻），命中才加载规则与工具
+  const skillRegistry = new SkillRegistry()
+  await skillRegistry.scan(resolveSkillsRoot())
+  const skillRouter = createSkillRouter(skillRegistry, defaultToolRegistry)
+  defaultToolRegistry.register(
+    createReadSkillFileTool((id) => skillRegistry.getIndex(id)),
+  )
+
+  // 猜数字工具一次性加载并常驻：游戏需跨多轮对话持续可用，
+  // 不随技能激活态卸载（避免切换/退出后模型无工具可调而只能编造）。
+  // 常驻后仍通过技能路由注入 skill.md 规则，开局/结束引导不变。
+  const residentSkillTools = await skillRegistry.loadScriptTools('guessnumber')
+  for (const tool of residentSkillTools) {
+    try {
+      defaultToolRegistry.register(tool)
+    } catch {
+      // 已注册时跳过（与技能路由激活时的重复注册处理一致）
+    }
+  }
+
   const toolOverrides = await loadToolConfigOverrides(configDir)
   defaultToolRegistry.applyOverrides(toolOverrides)
 
@@ -332,6 +360,10 @@ export async function initializeChatController(
     console.error('[retrieval] embedding model load failed:', error)
   })
 
+  // 会话级上下文占用观测：按 packageId/sessionId 记录最近一次组装，供聊天窗展示拆分
+  const contextUsageTracker = new ContextUsageTracker()
+  contextUsageTrackerRef = contextUsageTracker
+
   const runtime = new AgentRuntime(
     provider,
     defaultToolRegistry,
@@ -344,6 +376,8 @@ export async function initializeChatController(
     },
     { importanceTrim, recentWindowChars },
     guardConfig,
+    skillRouter,
+    contextUsageTracker,
   )
   const service = new ChatService(
     store,
@@ -422,13 +456,24 @@ export async function initializeChatController(
     // 先取消该会话进行中的请求，再删除会话，避免主进程 activeRequests/activeSessions 残留
     service.cancelForSession(sessionId)
     const deleted = await store.deleteSession(sessionId)
-    if (deleted) await memoryStore.deleteSessionSummary(sessionId)
+    if (deleted) {
+      await memoryStore.deleteSessionSummary(sessionId)
+      contextUsageTrackerRef?.deleteSession(sessionId)
+    }
     return deleted
   })
   ipcMain.handle('chat:active-package-id', () =>
     resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
   )
-  ipcMain.handle('chat:context:usage', () => runtime.lastContextUsage ?? null)
+  ipcMain.handle('chat:context:usage', (_event, rawSessionId: unknown) => {
+    const sessionId = typeof rawSessionId === 'string' ? rawSessionId.trim() : ''
+    if (!sessionId) return breakdownToUsage(undefined, budgetCharacters)
+    const observation = contextUsageTracker.get(
+      sessionId,
+      resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null) ?? undefined,
+    )
+    return breakdownToUsage(observation, budgetCharacters)
+  })
   ipcMain.handle('chat:send', async (event, raw: unknown) => {
     try {
       return await service.send(requireSendInput(raw), {
@@ -504,6 +549,17 @@ export async function initializeChatController(
   )
 
   ipcMain.handle('tools:list', () => defaultToolRegistry.listMeta())
+  ipcMain.handle('skills:list', () => ({
+    indices: skillRegistry.listIndices().map((index) => ({
+      id: index.id,
+      name: index.name,
+      description: index.description,
+      trigger: index.trigger,
+      priority: index.priority,
+      active: skillRegistry.getActiveId() === index.id,
+      loaded: skillRegistry.isLoaded(index.id),
+    })),
+  }))
   ipcMain.handle('tools:traces:by-session', (_event, rawSessionId: unknown) =>
     traceStore.listBySession(requireId(rawSessionId, '会话标识')),
   )

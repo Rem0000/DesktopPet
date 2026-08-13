@@ -347,6 +347,41 @@ describe('AgentRuntime', () => {
     expect(note).toContain('逐字取自')
   })
 
+  it('formatToolResultsForModel 回填猜数字工具的真实结果，供模型每轮引导', () => {
+    const note = formatToolResultsForModel([
+      JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
+      JSON.stringify({ tool: 'compare_guess', ok: true, output: { status: 'high', attempts: 2 } }),
+      JSON.stringify({ tool: 'end_game', ok: true, output: { ended: true } }),
+    ])
+    expect(note).toContain('compare_guess 结果：偏大')
+    expect(note).toContain('第 2 次猜测')
+    expect(note).toContain('end_game：猜数字游戏已结束')
+    expect(note).not.toContain('不要复述 JSON')
+  })
+
+  it('formatToolResultsForModel 不向模型泄露 generate_secret 谜底', () => {
+    const note = formatToolResultsForModel([
+      JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
+    ])
+    expect(note).toContain('谜底已生成')
+    expect(note).toContain('先调用 compare_guess')
+    expect(note).not.toContain('74')
+    expect(note).not.toContain('谜底已生成 74')
+  })
+
+  it('formatToolResultsForModel 猜中时回填 correct 与泄密文案', () => {
+    const note = formatToolResultsForModel([
+      JSON.stringify({
+        tool: 'compare_guess',
+        ok: true,
+        output: { status: 'correct', attempts: 5, message: '已猜 10 次没猜中,我泄密啦:答案是 74。再陪我玩一次嘛～' },
+      }),
+    ])
+    expect(note).toContain('compare_guess 结果：猜中')
+    expect(note).toContain('第 5 次猜测')
+    expect(note).toContain('答案是 74')
+  })
+
   it('识别记住意图与输出规范类记住请求', () => {
     expect(hasRememberIntent('另外，记住我喜欢简洁的回答。')).toBe(true)
     expect(isPersonaStyleRememberRequest('另外，记住我喜欢简洁的回答。')).toBe(true)
@@ -583,5 +618,45 @@ describe('AgentRuntime', () => {
     })
     expect(executed).toBe(1)
     expect(planRound).toBe(1)
+  })
+
+  it('按会话记录上下文占用拆分观测', async () => {
+    const runtime = new AgentRuntime(
+      {
+        stream: async (_messages, _config, _signal, onToken) => {
+          onToken('你好呀')
+          return '你好呀'
+        },
+      },
+      new ToolRegistry(),
+    )
+    const controller = new AbortController()
+    await runtime.run({
+      sessionId: 'a',
+      packageId: 'pkg-a',
+      messages: [message('1', 'a', 'user', '你好')],
+      config,
+      signal: controller.signal,
+      onToken: () => undefined,
+    })
+    await runtime.run({
+      sessionId: 'b',
+      packageId: 'pkg-b',
+      messages: [message('2', 'b', 'user', '今天天气不错')],
+      config,
+      signal: controller.signal,
+      onToken: () => undefined,
+    })
+
+    const a = runtime.getContextUsage('a')
+    const b = runtime.getContextUsage('b')
+    expect(a).toBeDefined()
+    expect(b).toBeDefined()
+    // 各会话独立观测：b 的消息更长，messages 拆分应大于 a
+    expect(b!.messagesCharacters).toBeGreaterThan(a!.messagesCharacters)
+    expect(a!.sessionId).toBe('a')
+    expect(a!.packageId).toBe('pkg-a')
+    expect(b!.packageId).toBe('pkg-b')
+    expect(a!.systemPromptCharacters).toBeGreaterThan(0)
   })
 })
