@@ -50,6 +50,8 @@ export type ChatError = {
 export type ProviderPublicConfig = {
   baseUrl: string
   model: string
+  /** 规划任务专用模型；留空则规划复用 model */
+  plannerModel?: string
   hasApiKey: boolean
   apiKeyStorage: 'encrypted' | 'memory' | 'none'
 }
@@ -57,6 +59,8 @@ export type ProviderPublicConfig = {
 export type ProviderConfigInput = {
   baseUrl: string
   model: string
+  /** 规划任务专用模型；留空则规划复用 model */
+  plannerModel?: string
   apiKey?: string
 }
 
@@ -64,6 +68,8 @@ export type ProviderRuntimeConfig = {
   baseUrl: string
   model: string
   apiKey: string
+  /** 规划任务专用模型；留空则规划复用 model */
+  plannerModel?: string
   /** 提供方标识（如 'deepseek'）；为多 Provider 扩展预留，默认 'deepseek' */
   providerKind?: string
 }

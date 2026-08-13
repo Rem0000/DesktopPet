@@ -69,6 +69,17 @@ if (!config.apiKey && kind !== 'ollama') throw new Error('请先配置 API Key')
 
 `planToolCalls` 是可选方法。若实现不支持工具，返回 `{ toolCalls: [] }` 即可——`AgentRuntime` 已有 `if (!provider.planToolCalls || …) return []` 防御，不会阻塞对话。
 
+### 7. 按场景路由：规划与生成分离
+
+同一 Provider 内可让**不同任务**用不同模型。当前支持**规划（`planToolCalls`）**与**生成（`stream`）**两任务分离：
+
+- `ProviderRuntimeConfig.plannerModel?: string`：规划任务专用模型；**留空则规划复用 `model`**。
+- 生成、摘要、结构化补全（`stream` / `summarize` / `completeText`）统一用主 `model`——后台任务不设专用模型，避免配置膨胀。
+- 持久化：`StoredProviderConfig.plannerModel` 可选字段，缺失向后兼容；配置面板（聊天窗设置）新增「规划模型（可选）」输入。
+- 典型用法：`model = deepseek-chat`（生成）+ `plannerModel = deepseek-reasoner`（工具规划走推理模型，指令遵循更稳）。
+
+> 这是**任务级路由**（同一 Provider 内选模型）。若要**多 Provider 运行时切换**（如换 Ollama/OpenRouter），需把 `providerKind` 持久化并让 `createProvider` 真正按 kind 分发——两者正交，可叠加。
+
 ## 面试叙事
 
 「我把 LLM 调用收敛到一个 `ChatProvider` 接口 + 一个 `createProvider` 工厂：`switch(kind)` 就是扩展点，`DeepSeekProvider implements ChatProvider` 但保留 `AgentProvider` 别名为兼容层，所以既有测试零破坏。OpenAI 兼容的加个 baseURL 配置即可，Anthropic 换 `ChatAnthropic` 且注意 `max_tokens` 必填——从接口抽象到可演进的落地，而不是只留一个空接口。」

@@ -21,6 +21,7 @@ const DEFAULT_MODEL = 'deepseek-chat'
 type StoredProviderConfig = {
   baseUrl: string
   model: string
+  plannerModel?: string
   encryptedApiKey?: string
 }
 
@@ -249,6 +250,7 @@ export class ChatStore {
     return {
       baseUrl: this.database.provider.baseUrl,
       model: this.database.provider.model,
+      plannerModel: this.database.provider.plannerModel,
       hasApiKey: Boolean(this.memoryApiKey) || hasEncrypted,
       apiKeyStorage: this.memoryApiKey
         ? 'memory'
@@ -274,6 +276,7 @@ export class ChatStore {
     return {
       baseUrl: this.database.provider.baseUrl,
       model: this.database.provider.model,
+      plannerModel: this.database.provider.plannerModel,
       apiKey,
     }
   }
@@ -281,10 +284,12 @@ export class ChatStore {
   async updateProviderConfig(input: ProviderConfigInput): Promise<ProviderPublicConfig> {
     const baseUrl = input.baseUrl.trim().replace(/\/+$/, '')
     const model = input.model.trim()
+    const plannerModel = input.plannerModel?.trim() || undefined
     const key = input.apiKey?.trim()
     return this.mutate(() => {
       this.database.provider.baseUrl = baseUrl
       this.database.provider.model = model
+      this.database.provider.plannerModel = plannerModel
       if (key !== undefined) {
         this.memoryApiKey = ''
         delete this.database.provider.encryptedApiKey

@@ -43,6 +43,7 @@ const MEMORY_PLAN_INSTRUCTION = PLAN_TOOL_INSTRUCTION
 export function validateProviderConfig(input: ProviderConfigInput): ProviderConfigInput {
   const baseUrl = input.baseUrl.trim().replace(/\/+$/, '')
   const model = input.model.trim()
+  const plannerModel = input.plannerModel?.trim() || undefined
   let parsed: URL
   try {
     parsed = new URL(baseUrl)
@@ -55,10 +56,13 @@ export function validateProviderConfig(input: ProviderConfigInput): ProviderConf
   if (!model || model.length > 120 || !/^[\w./:-]+$/u.test(model)) {
     throw new Error('模型名称无效')
   }
+  if (plannerModel && (plannerModel.length > 120 || !/^[\w./:-]+$/u.test(plannerModel))) {
+    throw new Error('规划模型名称无效')
+  }
   if (input.apiKey && input.apiKey.length > 512) {
     throw new Error('API Key 长度无效')
   }
-  return { baseUrl, model, apiKey: input.apiKey?.trim() }
+  return { baseUrl, model, plannerModel, apiKey: input.apiKey?.trim() }
 }
 
 function toLangChainMessages(messages: ChatMessage[]): BaseMessage[] {
@@ -203,7 +207,7 @@ export class DeepSeekProvider implements ChatProvider {
 
     const model = new ChatOpenAI({
       apiKey: config.apiKey,
-      model: config.model,
+      model: config.plannerModel || config.model,
       streaming: false,
       timeout: 30_000,
       maxRetries: 0,
