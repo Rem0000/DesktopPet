@@ -6,7 +6,7 @@
 
 ## 项目一句话（秋招版）
 
-基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合；另新增**活的关系状态（亲密度）**——好感温度随对话实时增减、三种策略化注入、慢速人审演化，永不改写人设；并落地**分层上下文工程**——滚动会话摘要、可配置上下文预算、包级历史会话按需检索，长对话不再遗忘上文。更进一步：对话关键事实**自动 episode 沉淀**到长期记忆（非阻塞抽取 + 触发闸门 + 去重）、**消息级重要性加权裁剪**（超预算时窗口外高重要性消息优先保留）、助手回复 **Markdown 安全渲染**（仅助手消息、流式期纯文本、raw HTML 转义）。
+基于 Electron + React + Live2D 的 Windows 桌面智能体：主进程 DeepSeek + LangGraph 编排，具备**可插拔工具白名单**、**confirm 安全闸门**、**有限多轮工具环**、**跨模型共享长期记忆**、**按模型人设/会话隔离**，以及**工具调用可观测、Hybrid 检索记忆/RAG 与离线评测**的端侧 Agent 平台；并扩展**独立小说工坊**——长篇现实向叙事状态机（Canon 闸门、伏笔账本、知情差）+ 固定块/检索块写章上下文，与聊天记忆零耦合；另新增**活的关系状态（亲密度）**——好感温度随对话实时增减、三种策略化注入、慢速人审演化，永不改写人设；并落地**分层上下文管理与压缩策略**——滚动会话摘要（触发点对齐可见窗口溢出、增量推进）、可配置上下文预算、包级历史会话按需检索，长对话不再遗忘上文。更进一步：对话关键事实**自动 episode 沉淀**到长期记忆（非阻塞抽取 + 触发闸门 + 去重）、**消息级重要性加权裁剪**（超预算时窗口外高重要性消息优先保留）、助手回复 **Markdown 安全渲染**（仅助手消息、流式期纯文本、raw HTML 转义）。
 
 ## 简历包装标题（建议）
 
@@ -19,7 +19,7 @@
 3. 实现分层长期记忆（跨模型共享画像/事实 vs 按模型人设）与 **Hybrid 可检索召回**（BM25 + BGE 向量 + RRF 融合）；落地本地知识库 RAG（Markdown 结构切块、headingPath 元数据、`search_knowledge`、引用溯源）与 20 条离线评测集（工具/记忆/RAG，离线 eval 全绿）。
 4. 设计独立**小说工坊**模块：一书一库 StoryStore（角色/关系/知情差/时间线/伏笔账本），写章流水线 `assemble → draft → StateDiff → Continuity Guard → 人审 Accept`；Accept 才晋升 Canon 并重建书内 Hybrid 索引；复用检索内核但数据路径与聊天记忆/知识库严格隔离；全书预览与 Markdown/HTML/PDF 导出。
 5. 实现**活的关系状态（亲密度）**：按模型包隔离持久化好感温度（0–100 五段关系阶段）、`update_relationship` 白名单工具按对话实时增减（±10 clamp、人设优先冻结）、`MemoryService.assemble` 分层注入（persona 不可变种子 + 关系块 + 演化覆盖）、**慢速人审演化**（阈值+事件驱动反思 → 候选 → 人审接受才生效，永不改写 persona.md），与记忆/小说零耦合。
-6. 实现**分层上下文工程**：修复长对话"忘上文"——会话摘要改为基于**裁剪前完整历史**的滚动摘要（`coveredUntilMessageId` 增量推进）、上下文预算 24k→40k 且 `data/config/` 可配置、新增 `search_history` 工具按需检索当前包**全部历史会话**原话（BM25-only、带出处、窄触发）、上下文占用水位可观测。
+6. 实现**分层上下文管理 + 压缩策略**：四层上下文架构（Level 0 人设/关系恒在 → Level 1 长期记忆 Hybrid 召回 → Level 2 滚动会话摘要 → Level 2.5 `search_history` 逐字兜底 → Level 3 近期逐字窗口）；两级压缩（`normalize` 重要性加权裁剪 + `assemble` 可见窗口/滚动摘要），会话摘要基于**裁剪前完整历史**增量推进（`coveredUntilMessageId`）、**触发点对齐可见窗口溢出**（消息刚被挤出窗口即概括，消除丢消息无摘要区）、head+tail 采样 + 失败回退要点列表；上下文预算 24k→40k 且 `data/config/` 可配置；上下文占用按会话统计 + 五类来源拆分可观测（Messages / System tools / System prompt / Memory files / Skills，对齐 Claude Code）。
 7. 实现**对话关键事实自动 episode 沉淀**：每轮对话完成后主进程**非阻塞**抽取关键事实写入 `episode` 记忆（带会话/消息溯源）；触发闸门（关键事实意图或累计未沉淀消息达阈值）+ 间隔限频 + 与既有记忆去重，`data/config/episode-config.json` 可开关；普通闲聊零调用、抽取失败只日志不阻断聊天。
 8. 实现**消息级重要性加权裁剪**：`ChatMessage` 增写入期启发式 `importance`（关键事实/提问/长消息/工具成功加权），超预算裁剪改为「近期窗口逐字保留 + 窗口外按 importance 高→低补齐、输出保序」，`context-config.json` 可配 `importanceTrim`；让重要的早期事实不再被琐碎闲聊顶掉。
 9. 实现**助手回复 Markdown 安全渲染**：助手消息以 `react-markdown` 渲染（标题/列表/代码块/表格/引用/链接，`remark-gfm`），用户消息保持纯文本；流式期逐字纯文本、完成态一次渲染；raw HTML 由渲染器默认转义为纯文本（不产生可执行 DOM 节点，符合 CSP）。
@@ -163,6 +163,39 @@
 - 记忆和聊天记录有何区别？聊天是事件日志；记忆是可召回、可编辑、可过期的结构化知识。
 - 数据与模型权重缓存于项目 `data/`（非 C 盘 userData），便于演示与备份。
 
+#### 5.1 记忆系统全景：存储 → 写入 → 召回 → 注入
+
+记忆系统不是「聊天记录另存一份」，而是**结构化、可召回、可编辑、可过期、跨模型共享**的长期知识。四条链路串起来讲：
+
+**① 存储层（`MemoryStore`，`electron/chat/memoryStore.ts`）**
+- `data/memory/memory-data.json`：原子写（`fsAtomic`）+ **串行写队列**（`mutate` 排队持久化）+ 版本化 + 损坏自动备份重开；条目上限 500。
+- 类型五类：`profile`（跨模型画像，带 key 同键覆盖）/ `fact`（长期事实）/ `commitment`（有时限约定，带 `expiresAt`）/ `episode`（后台自动沉淀）；`preference` 已废弃、写入即拒——口吻/输出规范一律进人设文件。
+- `MemoryItem` 字段：`id / type / key / content / importance(1–3) / pinned(置顶) / lastAccessedAt / sourceSessionId / sourceMessageIds / createdAt / updatedAt / expiresAt`。
+- **安全守卫** `assertSafeMemoryContent`：非空、单条 ≤2000 字符、正则拒密钥/口令/token（写记忆的硬边界）。
+- 向量索引 `MemoryVectorIndex`（`data/memory/vectors.json`，自研 HNSW ANN）：写入即 upsert 向量，启动 `ensureVectorConsistency` 补齐缺失，保证向量库与 JSON 永不脱节。
+
+**② 写入层（两条路径，一主动一后台）**
+- **Agent 工具写入**（ToolRegistry 注册，模型规划轮自主调用）：`update_profile`（safe，profile）+ `remember_fact`（safe，无过期→fact / 带过期→commitment）+ `forget_memory`（**confirm 闸门**，按 id 删）。模型只能写这三类，不能碰 `profile` 之外的 key 语义。
+- **后台 Episode 自动沉淀**（`EpisodeDistiller`，非阻塞串行队列 + AbortController 可取消）：触发闸门 = enabled +（关键事实意图命中 | 累计未沉淀消息达阈值）+ 间隔限频 + **冷启动跳过**（首遇大历史会话预置基准线，避免把整段旧史当新消息白烧 LLM）；LLM 抽取 → 容错 JSON 解析（`parseEpisodes`）→ 与既有 fact/episode **相似度去重**（`scoreMemoryItem ≥ 10`）→ 敏感过滤 → 写 `type=episode` 带 `sourceSessionId/sourceMessageIds` 溯源。抽取失败只日志、绝不阻断聊天。
+
+**③ 召回层（`MemoryService.recall` / `retrieveMemories`）**
+- 检索集 = 全量 active 条目（排除 `preference`、未过期）；**Hybrid 双路**（BM25 稀疏 + BGE 向量，RRF 融合 + 线性 Rerank），metadata 加分 = `pin + importance + 180 天衰减 + profile 类型加权`——同一条 `hybridSearch` 内核也被知识库 RAG / 小说书内检索复用。
+- **空查询回退**：按 `pinned → importance → 更新时间` 排序取 top-K，保证开场也能带出画像。
+- **profile 恒留**：`recall` 额外把高重要度 profile（pinned/importance 排序 top-4）**强制合并**进结果，避免弱相关查询时画像被顶掉。
+- 每次召回 `touchAccessed` 更新 `lastAccessedAt`，形成访问轨迹。
+
+**④ 注入层（`MemoryService.assemble`，Level 0/1/2/2.5 的 0+1）**
+- `assemble` 把记忆合成进 systemPrompt 的固定层次：`persona(Level0) + 关系层(三 policy + 演化覆盖) + 每日首见块 + 【长期记忆】块(预算 18%) + 【会话摘要】块(预算 12%)`，可见窗口用重要性加权裁剪（`trimContextWeighted`）吃剩余预算。
+- 记忆块内按 `pinned → importance` 排序、`importance` 数字标注、超预算截断；**guard 开启时每条记忆包成不可信区**（`markUntrustedBlock`，与 §13.2 注入防护同源——记忆是用户可写输入，注入面隔离）。
+- **与对话隔离**：会话摘要基于**裁剪前完整历史**（`allMessages`）增量推进（`coveredUntilMessageId` + `SUMMARY_REGEN_MIN_CHARS` 闸门），见 §11；聊天原文 vs 记忆两套存储互不污染，小说数据与记忆/知识库严格隔离（§8）。
+
+**面试可答：**
+- 为什么记忆要分 profile / fact / commitment / episode？写入语义不同决定生命周期：profile 同键覆盖、fact 长期、commitment 带过期、episode 后台自动——召回与清理都按类型差异化。
+- 为什么 `preference` 被移除？模型口吻/输出规范本质是「这个角色怎么说话」，属于人设而非用户事实；写进共享记忆会让所有模型串味（此前文档/简历 §5 有专门记录）。
+- 为什么写入走工具、沉淀走后台，两条腿？工具让模型在关键时刻**主动**记（用户明确要求），后台 episode 兜底**模型漏记**的关键事实（决定/约定/身份），触发闸门保证平凡闲聊零 LLM 调用——主动与自动互补。
+- 记忆怎么进 prompt？不在每条消息里贴全部记忆（会爆预算），而是用 query 做 Hybrid 检索、按预算 18% 注入 top-K，保证「相关才进来」。
+
+
 ### 6. 本地知识库 RAG + Hybrid 检索（P2 · 硬核加分）
 - 知识库与用户记忆**分库**：导入 md/txt → **结构感知切块**（按 `#`/`##`/`###` 分段，超 800 字二次切分、80 字 overlap，保留 `headingPath`）→ 双索引写入（`index.json` 元数据 + `vectors.json` 向量）→ Agent 调用 `search_knowledge` 召回。
 - Embedding：`Xenova/bge-small-zh-v1.5` 本地 ONNX，512 维，mean pooling + L2 normalize；权重缓存于 `data/models/`。
@@ -284,29 +317,63 @@ persona-first 的语义是"关系以人设既定设定为准"。若只做渲染�
 **面试一句话收束：**  
 「关系是『动态信号 + 人设 canon』的合成物；当策略声明『人设优先』时，规划与执行两条写入路径都要堵死，否则近因效应会让状态自我强化。」
 
-### 11. 分层上下文工程：滚动摘要 + 包级历史检索（核心叙事）
+### 11. 上下文管理与压缩策略：分层上下文 + 滚动摘要 + 逐字兜底（核心叙事）
 
-- **四层上下文架构**（对齐 Claude Code 的做法）：Level 0 系统提示（人设 + 关系层，恒在）→ Level 1 可检索长期记忆（按需 Hybrid 召回）→ Level 2 滚动会话摘要（压缩早期轮次）→ Level 3 近期原文（逐字窗口）；另加 **Level 2.5** `search_history` 包级历史检索作为压缩摘要的逐字兜底。
-- **修通滚动会话摘要**：原实现 `ensureSessionSummary` 的触发判断（`total > budget`）发生在 `normalize` 裁剪**之后**，收到的消息恒 ≤24k，摘要几乎从不生成——超预算早期对话被静默丢弃。修复：`AgentRuntime` 图状态增 `allMessages`（裁剪前完整历史），`recall` 用完整历史调 `assemble` 生成摘要；`coveredUntilMessageId` 增量推进，仅当被挤出窗口的早期边界前进才重摘要；`provider.summarize` 改 head+tail 采样避免只概括最开头；失败回退要点列表、不阻断回复。
-- **上下文预算可配置**：默认 24k→40k 字符（仍远小于 DeepSeek 64k token 上限），`data/config/context-config.json` 可覆盖（非法值回退默认）；长期记忆/摘要/近期窗口按比例共享预算。
-- **`search_history` 工具（包级全量）**：按需检索**当前活跃包全部历史会话**的已提交消息原话；仅 BM25（复用检索内核的稀疏路，**不依赖向量 Embedding**，Embedding 挂了仍可用）；结果带出处（会话/时间/角色/excerpt/score）；`formatToolResultsForModel` 硬约束——有命中必须逐字引用、无命中禁止编造；规划提示窄触发（仅用户引用更早对话且上下文缺细节时调用）、单发不进二次规划。
-- **上下文占用可观测**：`chat:context:usage` IPC 暴露 budget/used/ratio，聊天窗展示 "上下文 X%" 占用水位，>90% 警示。
-- **RAG 检索开关**：知识库面板一键开关对话内知识库检索（关闭后 `search_knowledge` 不进入规划、执行被拒），减少无关场景下检索内容占用上下文；持久化于 `tool-config.json`，不影响长期记忆召回与 `search_history`。
+**一句话定位：** 长对话「不遗忘、不爆预算、不静默丢消息」靠三条线协同——**分层上下文**（每层各司其职）、**两级压缩**（窗口裁剪 + 滚动摘要）、**按需逐字兜底**（`search_history`）。
 
-#### 难题场景：会话摘要的触发条件为什么"死"了
+#### 11.1 分层上下文架构（对齐 Claude Code 的 Level 0–3）
+
+| 层 | 内容 | 生命周期 | 预算占比 |
+|----|------|---------|---------|
+| Level 0 | 系统提示：人设 + 关系层 + 每日首见块 | 恒在 | 固定 |
+| Level 1 | 可检索长期记忆（Hybrid 召回 top-k，pin/importance/衰减加权） | 按需 | 18%（`MEMORY_BUDGET_RATIO`） |
+| Level 2 | 滚动会话摘要（压缩早期轮次） | 窗口溢出即触发、增量推进 | 12%（`SUMMARY_BUDGET_RATIO`，固定预留） |
+| Level 2.5 | `search_history` 包级历史检索（逐字兜底） | 按需（用户引用更早对话） | 单发检索，不进主预算 |
+| Level 3 | 近期原文（逐字窗口，重要性加权） | 逐字保留 | 预算 − systemPrompt − 摘要槽 − 5% |
+
+- **预算管理**：默认 40k 字符（`DEFAULT_CONTEXT_BUDGET`，`electron/chat/contextConfig.ts`），`data/config/context-config.json` 可覆盖，校验 [16k, 64k]、缺失/非法回退默认；40k 仍远小于 DeepSeek 64k token 上限（中文约 1 字 ≈ 1 token）。同配置还可调 `importanceTrim`（默认 true）与 `recentWindowChars`（默认 0.7·budget）。
+- **消息级重要性**：`ChatMessage` 写入期启发式 `importance`（1–3：关键事实/提问/长消息/数字加权、助手带成功工具调用加分、默认 2）；裁剪与检索召回都按它加权——重要早期事实不再被闲聊顶掉。
+- **可观测**：`ContextUsageTracker` 按 `packageId/sessionId` 记录最近一次组装观测，`chat:context:usage` IPC 按 **Messages / System tools / System prompt / Memory files / Skills** 五类来源拆分展示占用水位，>90% 警示（对齐 Claude Code 的做法）。
+
+#### 11.2 两级压缩管线
+
+1. **第一级 `normalize`（图内早期边界）**：`AgentState` 先把原始完整历史存入 `allMessages`，`messages` 用 `trimContextWeighted` 裁出「近期窗口逐字全保 + 窗口外按 importance 高→低补齐、输出保序、恒保最新一条」——只作图内早期边界，后续被覆盖。
+2. **第二级 `assemble`（可见窗口 + 滚动摘要）**：`MemoryService.assemble` 基于**完整历史** `allMessages` 组装——摘要槽固定预留 `0.12·budget`，可见窗口余量 = 预算 − systemPromptBase − 摘要槽 − 5%，`trimToBudget` 产出逐字窗口；**被窗口丢弃的消息（`early`）正是摘要的输入**，保证摘要恰好覆盖窗口实际丢的内容，而非按独立比例猜窗口边界。
+
+#### 11.3 滚动会话摘要（压缩核心）
+
+- **触发点 = 可见窗口首次溢出（`early` 非空）**，而非「完整历史总量 > 预算」——消息刚被挤出窗口就立刻概括，**不存在「既不在窗口里、也没被摘要」的丢消息区**（2026-08-13 关键修正：旧触发点晚于窗口溢出，总量 26k~40k 之间最早消息被静默丢弃）。
+- **增量推进**：`coveredUntilMessageId` + `SUMMARY_REGEN_MIN_CHARS`（4000 字符）闸门——自上次摘要以来新增的未覆盖早期内容不足时不重算 LLM，避免超预算会话每轮阻塞等待；摘要槽固定预留使窗口边界不随「是否已有摘要」漂移，杜绝「摘要出现→窗口收缩→挤出更多未概括消息」的震荡。
+- **采样**：`provider.summarize` 输入 head(4k)+tail(4k) 采样，覆盖最老设定与被挤出窗口的近期内容（≤8k 字符），避免只概括最开头。
+- **降级**：LLM 摘要失败/空结果 → `fallbackSummaryFromMessages` 要点列表，正常回复不中断。
+- **持久化与注入**：摘要存 `data/memory/memory-data.json` 的 `summaries[]`（`sessionId/summary/coveredUntilMessageId/updatedAt`，原子写、与长期记忆同库），**不覆盖原消息**；组装时以 `【会话摘要】\n…` 作为 systemPrompt 的 Level 2 块注入，近期原文以 `state.messages` 逐字传给模型。
+
+#### 11.4 逐字兜底：`search_history`
+
+压缩是有损的——被摘要取代的早期原话若用户引用，靠 `search_history` **逐字找回**：
+- 仅 BM25（复用检索内核稀疏路，**不依赖向量 Embedding**，Embedding 挂了仍可用）；作用域当前活跃包**全部历史会话**的已提交消息；结果带出处（会话/时间/角色/excerpt/score）。
+- 窄触发（仅用户引用更早对话「我之前说过…」且上下文缺细节时调用）、单发不进二次规划；`formatToolResultsForModel` 硬约束——有命中必须逐字引用、无命中禁止编造；命中原文经 `markUntrustedList` 做 Prompt 注入防护隔离。
+
+**三者互补**：摘要 = 常驻压缩（有损）；`search_history` = 按需逐字（无损）；长期记忆 = 语义长期（Level 1）。被压缩的早期对话信息无真正丢失——摘要常驻、原消息保留在 `data/chat/`（时间线回看不影响）、逐字可检索找回。删除会话时 `deleteSessionSummary` 清理对应摘要、不级联删长期记忆。
+
+#### 难题场景：会话摘要的触发条件为什么"死"了两次
 
 **Q：你修复长对话遗忘时，遇到的根因是什么？**
 
-**难题：**  
+**难题（第一层）：**  
 代码里明明有会话摘要机制，但长对话就是不生成摘要。排查发现：摘要的触发判断 `total > budget` 在 `normalize` 节点**先把消息裁到 ≤24k 之后**才执行，收到的消息总量恒 ≤ 预算，判断永远不成立——摘要路径是死的，超预算的早期对话被 `trimContext` 整条丢弃、且无任何压缩兜底。这在单测里测不出来（测试直接调 `assemble` 传完整历史），真实图里永远走不到。
+
+**难题（第二层，2026-08-13）：**  
+修通第一层后触发点仍偏晚：`total > budget` 在**可见窗口溢出之后**。可见窗口（≈ 预算 − systemPrompt − 摘要槽 − 5%）远小于预算，总量 26k~40k 之间最早消息已被窗口静默丢弃、却要等总量超预算才生成摘要——这段「既不在窗口里、也没被概括」的消息直接消失。
 
 **怎么解决：**
 1. 图状态增加 `allMessages`（裁剪前完整历史），`recall` 用完整历史生成摘要、用裁剪结果做可见窗口——职责分离。
 2. 摘要按 `coveredUntilMessageId` 增量推进，避免每次全量重概括；`provider.summarize` 输入改 head+tail 采样。
 3. 补一条"通过 AgentRuntime 跑长历史"的回归单测 + eval 场景，锁住"图内真实路径能触发摘要"。
+4. 把触发点改到**可见窗口首次溢出**：`assemble` 用与 `trimToBudget` 相同的裁剪口径反推被丢弃的 `early` 消息，摘要恰好覆盖窗口实际丢的内容；摘要槽固定预留 `0.12·budget` 稳住窗口边界；回归用例锁住"总量未超预算但窗口溢出仍生成摘要"。
 
 **面试一句话收束：**  
-「上下文压缩必须基于**裁剪前的完整历史**触发；把『裁剪』放在『摘要判断』之前，会让压缩机制在真实调用路径里静默失效——这种 bug 要靠端到端路径的回归测试才能拦住。」
+「上下文压缩的触发点必须对齐**实际可见窗口**而非预算总量——裁剪发生在摘要判断之前、或触发点晚于窗口溢出，都会让最早消息在无摘要的情况下直接从上下文消失；这类『机制死路』要靠端到端路径的回归测试才能拦住。」
 
 ### 12. 对话事实自动沉淀 + 消息级重要性裁剪 + 助手 Markdown 渲染（上下文工程收尾）
 
@@ -346,14 +413,17 @@ persona-first 的语义是"关系以人设既定设定为准"。若只做渲染�
 - 为什么外部内容要隔离？检索结果/网页正文/记忆都是用户或第三方可控的不可信输入；直接拼进系统提示可能被"忽略以上指令"劫持。
 - 为什么用软标记而不是沙箱？prompt 隔离无法硬保证，但把"外部引用"与"系统指令"语义分开是纵深防御第一层；配合输出侧 MUST 约束、敏感词过滤（`assertSafeMemoryContent`）与 SSRF 拦截（`urlSafety`）成体系。
 
-#### 13.3 Provider 接口抽象（`ChatProvider` + `createProvider` + `docs/providers.md`）
+#### 13.3 Provider 接口抽象 + 按场景模型路由（`ChatProvider` + `createProvider` + `docs/providers.md`）
 
 - `ChatProvider` 接口（`kind` + `stream` + `planToolCalls?` + `summarize` + `completeText`）落 `src/chat/contracts.ts`；`DeepSeekProvider implements ChatProvider`；`ProviderRuntimeConfig` 加 `providerKind`。
 - `createProvider(kind)` 工厂，`switch(kind)` 即扩展点，未知 kind 回退 DeepSeek 防配置漂移；`AgentProvider = Pick<ChatProvider, 'stream'|'planToolCalls'>` 别名保留，既有 mock 测试零改动。
 - `normalizeProviderError(error, kind)` 文案参数化（「`<kind>` API Key 无效」等）；`docs/providers.md` 写明新增 Provider 步骤（OpenAI 兼容改 baseURL / Anthropic 换 ChatAnthropic 且 `max_tokens` 必填 / 无 Key provider 需放宽 chatService/novelService 的无 Key 判断）。
+- **按场景模型路由（2026-08-10）**：`ProviderRuntimeConfig.plannerModel?: string`——**规划**与**生成**两任务可分别指定模型；`planToolCalls` 用 `plannerModel || model`，`stream`/`summarize`/`completeText` 恒用主 `model`（后台任务不设专用模型，避免配置膨胀）。持久化 `StoredProviderConfig.plannerModel` 可选字段、向后兼容；聊天窗设置面板新增「规划模型（可选）」输入，`requireProviderInput` 校验透传。典型用法：`deepseek-chat` 生成 + `deepseek-reasoner` 规划（工具调用指令遵循更稳）。
 
 **面试可答：**
 - 接口抽象和"只留个空接口"的区别？`AgentProvider` 保留为兼容别名、错误文案按 kind 参数化、工厂有回退兜底、文档给出落到 Anthropic/Ollama 的完整步骤——是可演进的抽象，不是形式主义。
+- 为什么做任务级模型路由？Agent 主链路上「规划」与「生成」对模型能力需求不同：规划要稳定的指令遵循与工具调用，生成要流畅的回复质量；拆开让「强规划 + 快生成」各取所长，且配置缺失回退主模型，零破坏。
+- 为什么后台任务不路由？summarize / completeText（episode 抽取、关系演化、judge）是非交互批处理，模型差异收益低，统一主 model 避免每类后台任务都要配一次模型。
 - 为什么 novel 侧（`DeepSeekNovelLlm`）与 `reminderRewrite` 本轮不统一？改动面与收益不成比例；在 `docs/providers.md` 标注为后续统一点。
 
 #### 13.4 LLM-as-judge 评测层（`evals/judge/` + `npm run eval:judge[:real]`）
@@ -365,6 +435,33 @@ persona-first 的语义是"关系以人设既定设定为准"。若只做渲染�
 **面试可答：**
 - 为什么需要 judge 而不是全规则断言？Agent 回复是开放式的，规则断言只能穷举可枚举的错误；开放性维度（是否自然、是否逐字引用）要 LLM 评才高效。
 - 为什么默认 mock？评测要可离线、可重复、零成本；真 LLM 模式作为可选的深度验证，两者一套场景集。
+
+### 14. 有状态多轮技能：渐进式加载的教训与加固（agent-skills 收尾）
+
+**背景（真实会话实证的坑）：** `agent-skills` 渐进式加载落地后，两个真实聊天会话暴露猜数字工具不可靠：
+
+- **会话一**（26200271）：模型从「91」起**编造整场游戏**——先宣布「75 猜中」，最后又改口「正确答案是 74」，两次答案互相矛盾。因为模型从头到尾**拿不到 compare_guess 的真值**，只能靠上下文猜。
+- **会话二**（3e2a8de6）：模型在「75」和「38（猜中）」两轮**跳过工具调用**、凭记忆编提示——因为一个早期修复把谜底注入了模型上下文，模型自认为「知道答案」，就不再依赖工具。
+
+**根因（两层叠加）：**
+
+1. **工具结果可观测性缺口**：`formatToolResultsForModel` 把所有成功工具结果折叠成一句「成功。可在回复中自然确认已完成」——`compare_guess` 的 `status`/`attempts` 不进模型上下文，模型失去游戏真值只能编造。trace 里 67/78/72/75 的 attempts 连续递增（同一份状态）证明**不是状态被重置**，而是结果根本没回传。
+2. **渐进式加载对有状态多轮技能不匹配**：游戏状态放模块级变量 + 工具可用性绑定激活态，跨轮/跨会话/重启后模型无工具可调，只能编。
+
+**迭代修复（第一版翻车，教训深刻）：**
+
+- **迭代 1（失败）**：把 `generate_secret` 的谜底直接注入模型上下文 → 模型自认为知道答案、跳过 `compare_guess` → 新 bug（会话二实证）。**教训：给模型"答案"会消灭它调工具的动机。**
+- **迭代 2（最终，五条）**：
+  1. **谜底绝不回填**：`generate_secret` 只回填「谜底已生成（仅存在于工具状态中，你不可见；每次用户给数字必须先调用 compare_guess）」——模型不调工具就无从判断大小，被迫每轮依赖工具，根治"跳过工具"。
+  2. **skill.md 硬规则**：每次用户给数字必须先调 `compare_guess` 拿真实判定、模型永远不知道谜底、未调工具禁止回复任何大小/胜负判断。
+  3. **游戏状态按会话隔离**：`tools.js` 从模块级全局变量改为 `Map<sessionId, game>`（`sourceSessionId` 由 `withSourceSession` 注入），不同会话的局互不干扰、同会话多轮续局、`end_game` 只清本会话。
+  4. **工具一次性加载常驻**：启动即把猜数字三个工具注册进 `defaultToolRegistry`，不绑定技能激活态——技能切换/退出后工具仍在规划集，模型始终有工具可调。
+  5. **猜中后次数重置**：`generate_secret` 幂等仅覆盖「尚未猜过」（`attempts===0`）——猜过或残留一律开新局，修复"猜中残留状态 → 下一局次数延续"。
+
+**面试一句话收束：**
+「有状态多轮技能（游戏）不能用『加载即用、用完即卸』的渐进式模型：**工具必须常驻可用、状态必须按会话隔离、每轮工具结果必须完整回填给模型**——三者缺一，模型就退化成靠上下文猜的纯文本角色扮演。且给模型"答案"会消灭它调工具的动机，真值只能通过工具结果逐轮回传。」
+
+**测试：** 新增 `guessnumberTools.test.ts`（幂等/会话隔离/次数重置/缺会话报错）+ `agentRuntime.test.ts` 补 `compare_guess` 结果回填与谜底不泄露用例，全套 **49 文件 293 测试通过**、typecheck 干净。
 
 ## 3 分钟面试陈述稿（可背）
 
@@ -407,6 +504,7 @@ A：Agent 主线、小说工坊一期、活的关系状态、分层上下文工�
 - ✅ RAG 检索开关：知识库面板一键关闭对话内知识库检索，减少无关上下文占用（不影响记忆与历史检索）
 - ✅ 回归单测 + 5 条 eval 场景，离线 eval **33/33**
 - ✅（已另行立项落地，见 §12）对话关键事实自动 episode 沉淀到长期记忆、消息级重要性加权裁剪
+- ✅（2026-08-13 关键修正）触发点提前到**可见窗口首次溢出**——`total > budget` 仍晚于窗口溢出，总量 26k~40k 之间最早消息被窗口静默丢弃且无摘要；改为 `assemble` 用与 `trimToBudget` 相同口径反推被丢弃的 `early`、摘要恰好在消息刚被挤出窗口时触发，摘要槽固定预留 `0.12·budget` 稳住窗口边界（详见 §11）
 
 ## 维护记录
 
@@ -431,3 +529,9 @@ A：Agent 主线、小说工坊一期、活的关系状态、分层上下文工�
 - 2026-08-05：完成 `daily-first-meeting-state`（每日首次见面状态）：按包持久化"当日是否已首见"（`data/memory/daily-meet.json`），首次对话注入"今天第一次见面按人设完成首见行为"、同日后续注入"已见过除非被问否则不重复"；顺带在系统提示注入当前本地日期，修复模型编造日期的问题
 - 2026-08-05：归档 `daily-first-meeting-state` / `tavily-web-search-fetch` 并同步 `pet-agent-runtime` 主规格；新增"项目架构与架构模式"章节——四层边界（进程/IPC/契约/编排）+ 架构模式定位（Hybrid 偏 Workflow，运行时为有界单轮 ReAct 而非 Planner），并配面试问答
 - 2026-08-08：落地 **A 档深水区**（秋招冲刺，见 §13）：① 自研 HNSW 纯 TS 向量索引（`hnswIndex.ts` + `annVectorStore.ts`，零新依赖；persist 复用 vectors.json 快照格式升 v2 + 启动确定性重建，v1 自动迁移；`hybridSearch` 新增 `searchVector` 回调让记忆/知识库/小说书内检索真正走 ANN，`npm run eval:ann` 输出 recall@10 参数矩阵）；② Prompt 注入防护（`untrustedContent.ts` markUntrustedBlock/markUntrustedList + `guard-config.json`，外部正文/记忆进 prompt 前以不可信区隔离，接入 `formatToolResultsForModel` 与 `formatMemoryBlock`）；③ Provider 接口抽象（`ChatProvider` 接口 + `createProvider` 工厂 + `providerKind` 字段 + `normalizeProviderError` 文案参数化，`AgentProvider` 改别名零破坏，`docs/providers.md` 扩展指南）；④ LLM-as-judge 评测层（`evals/judge/` + `npm run eval:judge[:real]`，rubric 五维打分，mock/real 双模式）；离线 eval 40→42 场景，`npm test` 255→263 通过
+- 2026-08-10：梳理记忆系统全景并更新本文档：新增 §5.1「记忆系统全景：存储 → 写入 → 召回 → 注入」——`MemoryStore`（原子写 + 串行写队列 + 版本化 + 五类记忆 + `assertSafeMemoryContent` 安全守卫 + HNSW 向量索引）、写入双路径（Agent 工具 `update_profile`/`remember_fact`/`forget_memory` confirm 闸门 + 后台 `EpisodeDistiller` 非阻塞自动沉淀）、Hybrid 召回（profile 恒留 + pin/importance/衰减加权）、注入层（persona + 关系层 + 首见块 + 记忆块 18% + 摘要块 12% + 不可信区隔离）
+- 2026-08-10：实现 **按场景模型路由**（规划/生成两任务分离）：`ProviderRuntimeConfig.plannerModel` 可选字段，`planToolCalls` 用 `plannerModel || model`，其余任务恒用主 model；`StoredProviderConfig` 持久化 + 聊天窗设置面板「规划模型（可选）」输入 + `validateProviderConfig`/`requireProviderInput` 校验透传；263 测试全绿；更新 §13.3 与 `docs/providers.md`
+- 2026-08-13：完成 `agent-skills`（**渐进式加载技能模块**）：技能 = 标准目录（`skills/<id>/skill.md` frontmatter+规则、`script/tools.js`、`references/`），启动只扫 frontmatter 生成轻量索引（`SkillRegistry.scan` 常驻），`skillRouter` 在 `recall` 节点对用户输入做确定性触发词扫描，命中才读 `skill.md` 规则注入提示词并动态 `require` `script/tools.js` 注册工具；互斥激活 + 退出卸载（`ToolRegistry.unregister` 新增）；新增 `read_skill_file` 工具（仅技能目录内、realpath 防穿越）；初始两技能——共情回声（情绪公式安抚，优先级最高）、智慧猜谜（1-100 猜数字，generate_secret/compare/end_game + 模块级游戏状态，超 10 次/退出终止）；技能目录随版本控制并 `extraResources` 打包；`skills:list` IPC 可观测；新增 18 单测、全套 278 通过
+- 2026-08-13：**有状态多轮技能加固**（agent-skills 收尾，见 §14）：两个真实会话暴露猜数字工具不可靠（模型编造胜负 / 跳过工具凭记忆编提示）。根因：工具结果被 `formatToolResultsForModel` 折叠不进上下文 + 渐进式加载对有状态多轮技能不匹配。五条修复——① `generate_secret` 谜底**绝不回填**模型（给答案会消灭调工具动机，第一版翻车教训）；② skill.md 硬规则（每次数字必须先调 `compare_guess`）；③ 游戏状态按 `sessionId` 隔离（`Map<sessionId,game>`）；④ 猜数字工具**一次性加载常驻** `defaultToolRegistry`（不绑激活态）；⑤ `generate_secret` 幂等仅覆盖未猜过、猜中残留一律开新局（修复次数延续）。新增 `guessnumberTools.test.ts` + 结果回填/谜底不泄露用例，全套 49 文件 293 通过
+- 2026-08-13：上下文占用按会话统计 + Claude Code 风格来源拆分（更新 §11）：修复多会话使用量错乱（`AgentRuntime.lastContextUsage` 单一全局字段 → `ContextUsageTracker` 按 `packageId/sessionId` 记录最近一次组装观测，`chat:context:usage` 接收 `sessionId`）；拆分 **Messages / System tools / System prompt / Memory files / Skills** 五类来源占比（systemPrompt 内嵌记忆/技能文本剔除防重复、工具目录按 JSON Schema 近似）；聊天窗「上下文 X%」改为向上弹出浮层卡片（absolute 锚定、z-index 高于聊天内容）展示占比条 + 合计字符；消息气泡底部增加发送/回复时间戳；顺带修复输入框被压缩（误删 `.chat-composer` 的 `flex: 0 0 auto` 已还原）；新增 `contextUsage.test.ts`，全套 292 测试通过
+- 2026-08-13：**会话摘要触发点提前到「可见窗口溢出」**（上下文压缩策略收尾，更新 §11）：`total > budget` 仍晚于可见窗口溢出——可见窗口（预算 − systemPrompt − 摘要槽 − 5%）先溢出，总量 26k~40k 之间最早消息被窗口静默丢弃且无摘要兜底。改为 `assemble` 用与 `trimToBudget` 相同口径反推被窗口丢弃的 `early`、`ensureSessionSummary` 直接消费 `early/recentIds`（不再猜窗口边界），消息刚被挤出窗口即概括；摘要槽固定预留 `0.12·budget` 使窗口边界不随摘要是否存在漂移（避免「摘要出现→窗口收缩→挤出更多未概括消息」震荡）；新增回归单测锁住"总量未超预算但窗口溢出仍生成摘要"；同步 OpenSpec `agent-memory` 规格与今日 worklog
