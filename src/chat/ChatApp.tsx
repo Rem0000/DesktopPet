@@ -31,7 +31,6 @@ const DEFAULT_CONFIG: ProviderPublicConfig = {
   hasApiKey: false,
   apiKeyStorage: 'none',
 }
-
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -46,6 +45,21 @@ function dateGroupLabel(iso: string): string {
   if (then.getTime() >= startOfToday - day) return '昨天'
   if (then.getTime() >= startOfToday - 6 * day) return '最近 7 天'
   return '更早'
+}
+
+/** 消息时间展示：今天显示 HH:mm，跨天显示 MM-DD HH:mm；流式/失败/取消显示对应状态 */
+function formatMessageTime(iso: string, status: ChatMessage['status']): string {
+  if (status === 'streaming') return '生成中…'
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return ''
+  const now = new Date()
+  const sameDay =
+    then.getFullYear() === now.getFullYear() &&
+    then.getMonth() === now.getMonth() &&
+    then.getDate() === now.getDate()
+  const hhmm = then.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  if (sameDay) return hhmm
+  return `${then.getMonth() + 1}-${then.getDate()} ${hhmm}`
 }
 
 /** 宠物/助手头像：优先 modelUrl 图片，失败回退首字符圆形底 */
@@ -113,7 +127,11 @@ export function ChatApp() {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({})
   const [expandedCitations, setExpandedCitations] = useState<Record<string, boolean>>({})
   const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const messageEndRef = useRef<HTMLDivElement>(null)
+  const sidebarMenuRef = useRef<HTMLDivElement>(null)
+  /** 当前展示会话 id（供流式完成事件判断是否刷新其上下文占用） */
+  const currentSessionIdRef = useRef<string | null>(null)
 
   const refreshSessions = useCallback(async (forPackageId?: string | null) => {
     const id = forPackageId ?? packageId
@@ -164,9 +182,9 @@ export function ChatApp() {
     [],
   )
 
-  const refreshContextUsage = useCallback(async () => {
+  const refreshContextUsage = useCallback(async (sessionId: string) => {
     try {
-      const next = await window.petAPI.chat.getContextUsage()
+      const next = await window.petAPI.chat.getContextUsage(sessionId)
       setContextUsage(next)
     } catch {
       setContextUsage(null)
@@ -178,6 +196,8 @@ export function ChatApp() {
     if (!next) return
 
     setSession(next)
+    currentSessionIdRef.current = sessionId
+    void refreshContextUsage(sessionId)
     // 切换会话时只保留目标会话自身的进行中请求标记，清除其余残留，
     // 避免历史会话的 activeRequests 泄漏导致输入框被 disabled 卡住。
     setActiveRequests((current) => {
@@ -203,13 +223,15 @@ export function ChatApp() {
     } catch {
       // 观测日志不可读时不阻断打开会话
     }
-  }, [])
+  }, [refreshContextUsage])
 
   const createSession = useCallback(async (forPackageId?: string | null) => {
     const id = forPackageId ?? packageId
     if (!id) throw new Error('当前没有活跃模型')
     const created = await window.petAPI.chat.createSession(id)
     setSession(created)
+    currentSessionIdRef.current = created.id
+    setContextUsage(null)
     // 新会话无任何进行中请求，清空残留标记，确保输入框立即可用
     setActiveRequests({})
     await refreshSessions(id)
@@ -389,7 +411,10 @@ export function ChatApp() {
           return next
         })
         void refreshSessions()
-        if (event.type === 'complete') void refreshContextUsage()
+        // 仅当完成的事件属于当前展示会话时才刷新其上下文占用，避免后台会话完成覆盖当前展示
+        if (event.type === 'complete' && currentSessionIdRef.current === event.sessionId) {
+          void refreshContextUsage(event.sessionId)
+        }
       }
     }
     return window.petAPI.chat.onStream(applyEvent)
@@ -516,6 +541,7 @@ export function ChatApp() {
       const updated = await window.petAPI.chat.updateProviderConfig({
         baseUrl: config.baseUrl,
         model: config.model,
+        plannerModel: config.plannerModel,
         apiKey: apiKey || undefined,
       })
       setConfig(updated)
@@ -642,10 +668,23 @@ export function ChatApp() {
 
   const utilityPanelOpen = showSettings || showMemory || showKnowledge
 
+  // 点击菜单外区域时关闭左侧菜单
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!sidebarMenuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [menuOpen])
+
   const closeUtilityPanel = () => {
     setShowSettings(false)
     setShowMemory(false)
     setShowKnowledge(false)
+    setMenuOpen(false)
   }
 
   return (
@@ -695,31 +734,65 @@ export function ChatApp() {
           })}
         </div>
         <div className="sidebar-actions">
-          <button
-            type="button"
-            className={`settings-toggle${showSettings ? ' active' : ''}`}
-            onClick={() => {
-              setShowSettings((value) => !value)
-              setShowMemory(false)
-              setShowKnowledge(false)
-            }}
+          <div
+            className={`sidebar-menu${utilityPanelOpen ? ' active' : ''}`}
+            ref={sidebarMenuRef}
           >
-            ⚙ DeepSeek 设置
-          </button>
-          <button
-            type="button"
-            className={`settings-toggle${showMemory ? ' active' : ''}`}
-            onClick={() => void openMemoryPanel()}
-          >
-            🧠 长期记忆
-          </button>
-          <button
-            type="button"
-            className={`settings-toggle${showKnowledge ? ' active' : ''}`}
-            onClick={() => void openKnowledgePanel()}
-          >
-            📚 知识库
-          </button>
+            <button
+              type="button"
+              className="sidebar-menu-toggle"
+              onClick={() => {
+                if (menuOpen) {
+                  setMenuOpen(false)
+                  return
+                }
+                if (utilityPanelOpen) {
+                  closeUtilityPanel()
+                  return
+                }
+                setMenuOpen(true)
+              }}
+              title="打开设置 / 记忆 / 知识库"
+            >
+              <span className="sidebar-menu-icon" aria-hidden="true">☰</span>
+            </button>
+            {menuOpen && (
+              <div className="sidebar-menu-popover">
+                <button
+                  type="button"
+                  className={`sidebar-menu-item${showSettings ? ' active' : ''}`}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setShowSettings((value) => !value)
+                    setShowMemory(false)
+                    setShowKnowledge(false)
+                  }}
+                >
+                  ⚙ DeepSeek 设置
+                </button>
+                <button
+                  type="button"
+                  className={`sidebar-menu-item${showMemory ? ' active' : ''}`}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void openMemoryPanel()
+                  }}
+                >
+                  🧠 长期记忆
+                </button>
+                <button
+                  type="button"
+                  className={`sidebar-menu-item${showKnowledge ? ' active' : ''}`}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void openKnowledgePanel()
+                  }}
+                >
+                  📚 知识库
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -841,6 +914,9 @@ export function ChatApp() {
                     {message.status === 'cancelled' && (
                       <small className="message-state">已停止</small>
                     )}
+                    <time className="message-time" dateTime={message.createdAt}>
+                      {formatMessageTime(message.createdAt, message.status)}
+                    </time>
                   </div>
                 </div>
                 )
@@ -878,12 +954,10 @@ export function ChatApp() {
           )}
         </form>
         {contextUsage && (
-          <div
-            className={`context-usage${contextUsage.ratio >= 0.9 ? ' context-usage-warn' : ''}`}
-            title={`已用 ${contextUsage.usedCharacters.toLocaleString()} / ${contextUsage.budgetCharacters.toLocaleString()} 字符`}
-          >
-            上下文 {Math.round(contextUsage.ratio * 100)}%
-          </div>
+          <ContextUsagePanel
+            usage={contextUsage}
+            onRefresh={() => session && void refreshContextUsage(session.id)}
+          />
         )}
       </section>
 
@@ -918,6 +992,19 @@ export function ChatApp() {
                     value={config.model}
                     onChange={(event) =>
                       setConfig((current) => ({ ...current, model: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  规划模型（可选，留空则复用上方模型）
+                  <input
+                    value={config.plannerModel ?? ''}
+                    placeholder="如 deepseek-reasoner"
+                    onChange={(event) =>
+                      setConfig((current) => ({
+                        ...current,
+                        plannerModel: event.target.value.trim() || undefined,
+                      }))
                     }
                   />
                 </label>
@@ -1046,6 +1133,89 @@ export function ChatApp() {
         </aside>
       )}
     </main>
+  )
+}
+
+/** 上下文占用拆分面板（对齐 Claude Code 的 Messages / System tools / System prompt / Memory files / Skills）
+ *  点击按钮向上弹出浮层卡片，层级高于聊天内容，不挤压布局。 */
+function ContextUsagePanel(props: {
+  usage: ContextUsage
+  onRefresh: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { usage } = props
+  const percent = Math.round(usage.ratio * 100)
+  const count = usage.observed
+    ? usage.parts.filter((part) => part.characters > 0).length
+    : 0
+  return (
+    <div className={`context-usage${usage.ratio >= 0.9 ? ' context-usage-warn' : ''}`}>
+      <button
+        type="button"
+        className="context-usage-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        title={`已用 ${usage.usedCharacters.toLocaleString()} / ${usage.budgetCharacters.toLocaleString()} 字符 · 点击查看来源占比`}
+      >
+        <span className="context-usage-pct">
+          {usage.observed ? `上下文 ${percent}%` : '上下文 暂无统计'}
+        </span>
+        <span className="context-usage-caret">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && (
+        <div className="context-usage-popover" role="dialog" aria-label="上下文使用详情">
+          <div className="context-usage-popover-header">
+            <strong>上下文使用详情</strong>
+            <button
+              type="button"
+              className="context-usage-popover-close"
+              title="关闭"
+              onClick={() => setExpanded(false)}
+            >
+              ×
+            </button>
+          </div>
+          {usage.observed ? (
+            <>
+              <ul>
+                {usage.parts.map((part) => {
+                  if (part.characters === 0) return null
+                  const width = usage.usedCharacters > 0
+                    ? Math.max(3, Math.round((part.characters / usage.usedCharacters) * 100))
+                    : 0
+                  return (
+                    <li key={part.key}>
+                      <div className="context-usage-row">
+                        <span className="context-usage-name">{part.label}</span>
+                        <span className="context-usage-char">
+                          {(part.characters / 1000).toFixed(1)}k
+                        </span>
+                      </div>
+                      <div className="context-usage-track">
+                        <span
+                          className={`context-usage-bar part-${part.key}`}
+                          style={{ width: `${width}%` }}
+                        />
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="context-usage-summary">
+                <span>共 {count} 类来源</span>
+                <span>
+                  {usage.usedCharacters.toLocaleString()} / {usage.budgetCharacters.toLocaleString()} 字符
+                </span>
+                <button type="button" className="context-usage-refresh" onClick={props.onRefresh}>
+                  刷新
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="context-usage-empty">该会话尚未产生上下文统计，发送一条消息后可见。</div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
