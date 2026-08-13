@@ -181,7 +181,14 @@ type PetMenuState = {
   hasLive2d?: boolean
   alwaysOnTop?: boolean
   soundEnabled?: boolean
-  motionGroups?: Array<{ name: string; count: number; hasSound: boolean }>
+  motionGroups?: Array<{
+    name: string
+    count: number
+    hasSound: boolean
+    displayName?: string
+    index?: number
+    expanded?: boolean
+  }>
   expressions?: string[]
   activeModelDir?: string
 }
@@ -212,13 +219,19 @@ function buildPetMenuTemplate(state: PetMenuState = {}): Electron.MenuItemConstr
     if (motionGroups.length > 0) {
       items.push({
         label: '播放动作',
-        submenu: motionGroups.map((g) => ({
-          label: `${g.name}（${g.count}${g.hasSound ? ' · 音' : ''}）`,
-          click: () =>
-            mainWindow?.webContents.send('live2d:play-motion', {
-              group: g.name,
-            }),
-        })),
+        submenu: motionGroups.map((g) => {
+          const label = g.expanded
+            ? `${g.displayName ?? g.name}${g.hasSound ? ' · 音' : ''}`
+            : `${g.name}（${g.count}${g.hasSound ? ' · 音' : ''}）`
+          return {
+            label,
+            click: () =>
+              mainWindow?.webContents.send('live2d:play-motion', {
+                group: g.name,
+                ...(g.index !== undefined ? { index: g.index } : {}),
+              }),
+          }
+        }),
       })
     }
     if (expressions.length > 0) {

@@ -4,6 +4,12 @@ export type Live2DMotionGroupInfo = {
   name: string
   count: number
   hasSound: boolean
+  /** 空组名展开时的动作文件名（如 complete / touch_head），语义组名时缺省 */
+  displayName?: string
+  /** 空组名展开时在组内的索引，用于精确定位播放 */
+  index?: number
+  /** true 表示 name 为空串、按单个动作展开的条目 */
+  expanded?: boolean
 }
 
 export type Live2DCatalog = {

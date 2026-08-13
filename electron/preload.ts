@@ -30,6 +30,12 @@ export type Live2DMotionGroupInfo = {
   name: string
   count: number
   hasSound: boolean
+  /** 空组名展开时的动作文件名（如 complete / touch_head），语义组名时缺省 */
+  displayName?: string
+  /** 空组名展开时在组内的索引，用于精确定位播放 */
+  index?: number
+  /** true 表示 name 为空串、按单个动作展开的条目 */
+  expanded?: boolean
 }
 
 export type Live2DCatalog = {
@@ -155,8 +161,9 @@ const api = {
       ipcRenderer.removeListener('live2d:request-import', handler)
     }
   },
-  onPlayMotion: (cb: (group: string) => void) => {
-    const handler = (_: unknown, payload: { group: string }) => cb(payload.group)
+  onPlayMotion: (cb: (group: string, index?: number) => void) => {
+    const handler = (_: unknown, payload: { group: string; index?: number }) =>
+      cb(payload.group, payload.index)
     ipcRenderer.on('live2d:play-motion', handler)
     return () => {
       ipcRenderer.removeListener('live2d:play-motion', handler)

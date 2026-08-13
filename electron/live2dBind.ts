@@ -10,6 +10,12 @@ export type Live2DMotionGroupInfo = {
   count: number
   /** 该组是否有任意条目带 Sound */
   hasSound: boolean
+  /** 空组名展开时的动作文件名（如 complete / touch_head），语义组名时缺省 */
+  displayName?: string
+  /** 空组名展开时在组内的索引，用于精确定位播放 */
+  index?: number
+  /** true 表示 name 为空串、按单个动作展开的条目 */
+  expanded?: boolean
 }
 
 export type Live2DCatalog = {
@@ -43,7 +49,7 @@ type Model3Json = {
     Expressions?: Array<{ Name?: string; File?: string }>
     Motions?: Record<
       string,
-      Array<{ File?: string; Sound?: string; FadeInTime?: number; FadeOutTime?: number }>
+      Array<{ File?: string; Sound?: string; sound?: string; FadeInTime?: number; FadeOutTime?: number }>
     >
   }
 }
@@ -193,18 +199,38 @@ function parseCubism4Catalog(modelPath: string): Live2DCatalog {
   const motions = refs.Motions ?? {}
   for (const [name, list] of Object.entries(motions)) {
     let groupHasSound = false
-    for (const item of list ?? []) {
+    const entries = list ?? []
+    for (const item of entries) {
+      const sound = item.Sound ?? item.sound
       if (item.File) check(item.File)
-      if (item.Sound) {
-        check(item.Sound)
+      if (sound) {
+        check(sound)
         groupHasSound = true
         hasSound = true
-        motionSounds.push(item.Sound.replace(/\\/g, '/'))
+        motionSounds.push(sound.replace(/\\/g, '/'))
       }
+    }
+    if (name === '' && entries.length > 0) {
+      // 空组名：如碧蓝航线提取包，全部动作挤在一个 "" 组下。
+      // 逐个动作展开成独立条目，便于在菜单里单独播放。
+      for (const [i, item] of entries.entries()) {
+        const displayName = item.File
+          ? path.basename(item.File, path.extname(item.File))
+          : `${i}`
+        motionGroups.push({
+          name: '',
+          count: 1,
+          hasSound: Boolean(item.Sound ?? item.sound),
+          displayName,
+          index: i,
+          expanded: true,
+        })
+      }
+      continue
     }
     motionGroups.push({
       name,
-      count: list?.length ?? 0,
+      count: entries.length,
       hasSound: groupHasSound,
     })
   }
@@ -257,7 +283,8 @@ function parseCubism2Catalog(modelPath: string): Live2DCatalog {
   const motions = raw.motions ?? {}
   for (const [name, list] of Object.entries(motions)) {
     let groupHasSound = false
-    for (const item of list ?? []) {
+    const entries = list ?? []
+    for (const item of entries) {
       const file = item.file ?? item.File
       const sound = item.sound ?? item.Sound
       if (file) check(file)
@@ -268,9 +295,27 @@ function parseCubism2Catalog(modelPath: string): Live2DCatalog {
         motionSounds.push(sound.replace(/\\/g, '/'))
       }
     }
+    if (name === '' && entries.length > 0) {
+      for (const [i, item] of entries.entries()) {
+        const file = item.file ?? item.File
+        const sound = item.sound ?? item.Sound
+        const displayName = file
+          ? path.basename(file, path.extname(file))
+          : `${i}`
+        motionGroups.push({
+          name: '',
+          count: 1,
+          hasSound: Boolean(sound),
+          displayName,
+          index: i,
+          expanded: true,
+        })
+      }
+      continue
+    }
     motionGroups.push({
       name,
-      count: list?.length ?? 0,
+      count: entries.length,
       hasSound: groupHasSound,
     })
   }

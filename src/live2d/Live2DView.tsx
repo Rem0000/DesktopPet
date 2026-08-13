@@ -85,16 +85,23 @@ function screenToCanvasPoint(
 }
 
 function pickIdleGroup(catalog?: Live2DCatalog | null): string {
-  const names = catalog?.motionGroups.map((g) => g.name) ?? []
+  // 只看语义分组（非空组名展开的条目）
+  const names =
+    catalog?.motionGroups.filter((g) => !g.expanded).map((g) => g.name) ?? []
   const preferred = ['Idle', 'idle', 'Idle2', 'Home', 'home']
   for (const p of preferred) {
     if (names.includes(p)) return p
   }
-  return names[0] ?? 'Idle'
+  if (names.length > 0) return names[0]
+  // 只有空组名展开条目：把空组作为唯一 idle 组，从里面随机播
+  if (catalog?.motionGroups.some((g) => g.expanded)) return ''
+  return 'Idle'
 }
 
 function pickTapGroups(catalog?: Live2DCatalog | null) {
-  const names = catalog?.motionGroups.map((g) => g.name) ?? []
+  // 只看语义分组（非空组名展开的条目）
+  const names =
+    catalog?.motionGroups.filter((g) => !g.expanded).map((g) => g.name) ?? []
   const head =
     names.find((n) => /tap.*head|touch.*head|head/i.test(n)) ??
     names.find((n) => /tap|touch|flick/i.test(n))
@@ -311,8 +318,18 @@ export function Live2DView({
         finishPress(e)
       }
 
-      const offPlayMotion = window.petAPI.onPlayMotion((group) => {
-        playGroup(group)
+      const offPlayMotion = window.petAPI.onPlayMotion((group, index) => {
+        if (index !== undefined) {
+          try {
+            void model
+              .motion(group, index, MotionPriority.NORMAL)
+              .catch(() => playIdle())
+          } catch {
+            playIdle()
+          }
+        } else {
+          playGroup(group)
+        }
       })
       const offPlayExpression = window.petAPI.onPlayExpression((name) => {
         const m = modelRef.current
