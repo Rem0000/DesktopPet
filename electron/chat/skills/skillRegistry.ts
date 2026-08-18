@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentTool } from '../../../src/chat/contracts'
+import type { AgentTool, GuardConfig } from '../../../src/chat/contracts'
 import type { SkillIndex, SkillModule, SkillScriptModule } from './types'
 
 /** 解析 skill.md 的 frontmatter(--- 之间的 YAML 键值对) */
@@ -27,6 +27,48 @@ export function resolveSkillPath(rootDir: string, relPath: string): string {
     throw new Error('技能路径越界,仅允许读取技能目录内文件')
   }
   return target
+}
+
+/**
+ * 技能类工具的 execute 结果必须在每轮回填给模型，否则模型失去游戏真值、
+ * 只能编造进度（见猜数字 91→75 状态的整场假游戏）。这里按工具约定识别并
+ * 格式化其输出字段（对齐 §14 修复），由 normalizeScriptTool 注入为 renderForModel。
+ */
+export function formatSkillResultLine(tool: string, output: unknown): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as Record<
+    string,
+    unknown
+  >
+  const pick = (key: string): string | undefined => {
+    const v = o[key]
+    return typeof v === 'string' && v.trim() ? v.trim() : typeof v === 'number' ? String(v) : undefined
+  }
+  // 软失败：execute 未抛错但返回 ok:false（如游戏尚未开始）——如实说明，禁止假装成功
+  if (o.ok === false) {
+    const err = pick('error')
+    return `- ${tool}：操作未完成（${err ?? '未知原因'}）。回复 MUST 据实说明，禁止假装成功。`
+  }
+  if (tool === 'compare_guess') {
+    const status = pick('status')
+    const attempts = pick('attempts')
+    const suffix = pick('message')
+    if (status) {
+      const verdict =
+        status === 'correct' ? '猜中' : status === 'high' ? '偏大' : status === 'low' ? '偏小' : status
+      let line = `compare_guess 结果：${verdict}`
+      if (attempts) line += `（第 ${attempts} 次猜测）`
+      if (suffix) line += `。${suffix}`
+      return line
+    }
+    if (suffix) return `compare_guess：${suffix}`
+  }
+  if (tool === 'generate_secret') {
+    // 谜底绝不回填给模型：否则模型会自以为知道答案而不再调用 compare_guess，
+    // 进而编造大小提示与胜负。模型必须通过 compare_guess 获取每轮真实结果。
+    return 'generate_secret：谜底已生成（仅存在于工具状态中，你不可见；每次用户给出数字，必须先调用 compare_guess 获取真实判定，禁止凭记忆或推测判断大小）'
+  }
+  if (tool === 'end_game') return 'end_game：猜数字游戏已结束，状态已清理'
+  return `- ${tool}：成功`
 }
 
 export class SkillRegistry {
@@ -164,6 +206,10 @@ export class SkillRegistry {
       parameters: tool.parameters,
       enabled: tool.enabled,
       riskLevel: tool.riskLevel,
+      renderForModel:
+        tool.renderForModel ??
+        ((output: unknown, _guardConfig?: GuardConfig) =>
+          formatSkillResultLine(tool.name, output)),
       validate: tool.validate ?? ((input: unknown) => input),
       execute: async (input, signal, ctx) => {
         const run = tool.execute

@@ -1,14 +1,32 @@
 import type {
   AgentTool,
   ChatMessage,
+  GuardConfig,
   HistoryHit,
   HistorySearchInput,
 } from '../../src/chat/contracts'
 import { Bm25Index } from '../retrieval/bm25Index'
 import type { ChatStore } from './chatStore'
 import type { ToolRegistry } from './toolRegistry'
+import { markUntrustedList } from './untrustedContent'
 
 const EXCERPT_CHARS = 280
+
+/** search_history 成功结果渲染：命中 excerpt 逐字透传 + 不可信区隔离 + 引用 MUST 约束；空命中如实说明 */
+function renderSearchHistory(output: unknown, guardConfig?: GuardConfig): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as {
+    hits?: Array<{ excerpt?: string }>
+  }
+  const hits = Array.isArray(o.hits) ? o.hits : []
+  const excerpts = hits
+    .map((hit) => (typeof hit.excerpt === 'string' ? hit.excerpt : ''))
+    .filter((excerpt) => excerpt.length > 0)
+  if (excerpts.length === 0) {
+    return 'search_history：历史中未找到相关内容。回复 MUST 如实说明未找到，禁止编造或声称存在。'
+  }
+  const guarded = markUntrustedList('search_history', excerpts, guardConfig)
+  return `search_history：找到 ${hits.length} 条历史记录，原文如下（引用 MUST 逐字取自以下 excerpt，不得补充结果外的内容）：\n${guarded.split('\n').join('\n  ')}`
+}
 
 /**
  * 包级历史会话按需检索：`search_history` 白名单工具。
@@ -62,6 +80,7 @@ export class HistorySearchService {
         const hits = await this.search(packageId, input.query, input.topK)
         return { ok: true as const, hits, empty: hits.length === 0 }
       },
+      renderForModel: (output, guardConfig) => renderSearchHistory(output, guardConfig),
     }
     if (!this.tools.get(tool.name)) this.tools.register(tool as AgentTool)
   }

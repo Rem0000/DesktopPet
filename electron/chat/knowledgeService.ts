@@ -1,6 +1,24 @@
-import type { AgentTool, KnowledgeCitation } from '../../src/chat/contracts'
+import type { AgentTool, GuardConfig, KnowledgeCitation } from '../../src/chat/contracts'
 import type { ToolRegistry } from './toolRegistry'
 import type { KnowledgeHit, KnowledgeStore } from './knowledgeStore'
+import { markUntrustedList } from './untrustedContent'
+
+/** search_knowledge 成功结果渲染：命中 excerpt 逐字透传 + 不可信区隔离 + 引用 MUST 逐字约束；空命中如实说明（P1 根因修复） */
+function renderSearchKnowledge(output: unknown, guardConfig?: GuardConfig): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as {
+    hits?: Array<{ excerpt?: string }>
+    empty?: boolean
+  }
+  const hits = Array.isArray(o.hits) ? o.hits : []
+  const excerpts = hits
+    .map((hit) => (typeof hit.excerpt === 'string' ? hit.excerpt : ''))
+    .filter((excerpt) => excerpt.length > 0)
+  if (excerpts.length === 0) {
+    return 'search_knowledge：知识库中未找到相关内容。回复 MUST 如实说明未找到，禁止编造或声称存在。'
+  }
+  const guarded = markUntrustedList('search_knowledge', excerpts, guardConfig)
+  return `search_knowledge：找到 ${hits.length} 条命中，引用 MUST 逐字取自以下 excerpt，不得补充结果外内容：\n${guarded.split('\n').join('\n  ')}`
+}
 
 export class KnowledgeService {
   constructor(
@@ -45,6 +63,7 @@ export class KnowledgeService {
           empty: hits.length === 0,
         }
       },
+      renderForModel: (output, guardConfig) => renderSearchKnowledge(output, guardConfig),
     }
     if (!this.tools.get(tool.name)) this.tools.register(tool)
   }

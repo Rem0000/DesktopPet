@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ProviderRuntimeConfig } from '../../src/chat/contracts'
+import type { AgentTool, ProviderRuntimeConfig } from '../../src/chat/contracts'
 import {
   AgentRuntime,
   formatToolResultsForModel,
@@ -7,6 +7,14 @@ import {
   hasSuccessfulRelationshipWrite,
 } from './agentRuntime'
 import { ToolRegistry } from './toolRegistry'
+
+/** 测试用：给工具注入默认 renderForModel 后再注册（避开 register() 的强制校验） */
+function registerTestTool(registry: ToolRegistry, tool: AgentTool): void {
+  registry.register({
+    ...tool,
+    renderForModel: tool.renderForModel ?? (() => `- ${tool.name}：成功`),
+  })
+}
 
 const CONFIG: ProviderRuntimeConfig = {
   baseUrl: 'https://api.deepseek.com',
@@ -68,7 +76,7 @@ describe('relationship intent routing', () => {
 
   it('planToolFilter 从规划集合剔除 update_relationship', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'update_relationship',
       description: 'r',
       enabled: true,
@@ -80,7 +88,7 @@ describe('relationship intent routing', () => {
       validate: (input) => input as never,
       execute: async () => ({ ok: true }),
     })
-    tools.register({
+    registerTestTool(tools, {
       name: 'search_knowledge',
       description: 'k',
       enabled: true,
@@ -128,7 +136,7 @@ describe('relationship intent routing', () => {
 
   it('无过滤时 update_relationship 仍进入规划集合', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'update_relationship',
       description: 'r',
       enabled: true,

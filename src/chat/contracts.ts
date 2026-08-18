@@ -324,6 +324,12 @@ export type AgentTool<Input = unknown, Output = unknown> = {
   riskLevel?: ToolRiskLevel
   validate: (input: unknown) => Input
   execute: (input: Input, signal: AbortSignal, ctx?: AgentToolContext) => Promise<Output>
+  /**
+   * 把自身 execute 的成功输出渲染为进入模型提示词的文本。
+   * 内容型工具（检索 excerpt/网页正文/历史记录/技能真值）MUST 渲染真实内容，
+   * MUST NOT 折叠为通用成功占位符；register() 强制要求提供（缺失即 fail-fast）。
+   */
+  renderForModel?: (output: Output, guardConfig?: GuardConfig) => string
 }
 
 export type ToolConfigOverride = {

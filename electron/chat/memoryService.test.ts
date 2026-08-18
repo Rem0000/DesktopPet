@@ -202,9 +202,9 @@ describe('MemoryService', () => {
     const runtime = new AgentRuntime(
       {
         stream: async (_messages, _config, _signal, onToken, systemPrompt) => {
-          // 运行时只把"remember_fact：成功"注入工具结果提示，不复述内容；
+          // 运行时把 remember_fact 的工具专属成功行注入提示，不复述内容；
           // 模型在读到成功结果后才确认已记住
-          const reply = systemPrompt?.includes('remember_fact：成功')
+          const reply = systemPrompt?.includes('remember_fact：已记住')
             ? '好的，已记住提醒喝水'
             : '你好'
           onToken(reply)

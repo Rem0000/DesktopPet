@@ -4,8 +4,9 @@ import type { AgentTool } from '../../src/chat/contracts'
 
 function makeTool(
   name: string,
-  options: Partial<Pick<AgentTool, 'enabled' | 'riskLevel' | 'parameters'>> & {
+  options: Partial<Pick<AgentTool, 'enabled' | 'riskLevel' | 'parameters' | 'renderForModel'>> & {
     omitParameters?: boolean
+    omitRenderForModel?: boolean
   } = {},
 ): AgentTool {
   return {
@@ -20,6 +21,9 @@ function makeTool(
           properties: {},
           additionalProperties: false,
         }),
+    renderForModel: options.omitRenderForModel
+      ? undefined
+      : (options.renderForModel ?? (() => `- ${name}：成功`)),
     validate: (input) => input,
     execute: async (input) => input,
   }
@@ -47,6 +51,15 @@ describe('ToolRegistry', () => {
     expect(registry.listMeta().find((item) => item.name === 'remember_fact')?.enabled).toBe(
       false,
     )
+  })
+
+  it('注册缺 renderForModel 的工具抛错（fail-fast，不静默退化）', () => {
+    const registry = new ToolRegistry()
+    expect(() =>
+      registry.register(makeTool('no_renderer', { omitRenderForModel: true })),
+    ).toThrow(/renderForModel/)
+    expect(registry.get('no_renderer')).toBeUndefined()
+    expect(registry.list()).toHaveLength(0)
   })
 
   it('代码默认 enabled=false 时配置可重新打开', () => {

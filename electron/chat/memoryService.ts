@@ -163,6 +163,27 @@ export function fallbackSummaryFromMessages(messages: ChatMessage[]): string {
   return points.length ? `早期对话要点：\n${points.join('\n')}` : '（暂无可用摘要）'
 }
 
+/** 记忆写入类工具（update_profile/remember_fact）的成功结果渲染：工具专属、如实的结果行 */
+function renderMemoryWriteResult(name: string, output: unknown): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as Record<
+    string,
+    unknown
+  >
+  if (o.ok === false) {
+    return `- ${name}：未能写入记忆（${typeof o.error === 'string' ? o.error : '操作未完成'}）。回复 MUST 据实说明，禁止声称已写入。`
+  }
+  const item = o.item as { key?: string; content?: string } | undefined
+  const content =
+    typeof item?.content === 'string'
+      ? item.content.replace(/\s+/g, ' ').trim().slice(0, 80)
+      : ''
+  if (name === 'update_profile') {
+    const key = typeof item?.key === 'string' && item.key ? item.key : ''
+    return `- update_profile：已更新画像${key ? `（key=${key}）` : ''}${content ? `：${content}` : '。'}`
+  }
+  return `- remember_fact：已记住${content ? `：${content}` : '。'}`
+}
+
 export class MemoryService {
   constructor(
     private readonly store: MemoryStore,
@@ -275,6 +296,7 @@ export class MemoryService {
           },
           _signal: AbortSignal,
         ) => write('profile')(input),
+        renderForModel: (output: unknown) => renderMemoryWriteResult('update_profile', output),
       },
       {
         name: 'remember_fact',
@@ -324,6 +346,7 @@ export class MemoryService {
           },
           _signal: AbortSignal,
         ) => write(input.expiresAt ? 'commitment' : 'fact')(input),
+        renderForModel: (output: unknown) => renderMemoryWriteResult('remember_fact', output),
       },
       {
         name: 'forget_memory',
@@ -351,6 +374,16 @@ export class MemoryService {
           const ok = await this.store.deleteItem(input.id)
           if (!ok) throw new Error('记忆条目不存在')
           return { ok: true as const, id: input.id }
+        },
+        renderForModel: (output: unknown) => {
+          const o = (typeof output === 'object' && output !== null ? output : {}) as {
+            ok?: boolean
+            id?: string
+          }
+          if (o.ok === false) {
+            return '- forget_memory：未能删除该记忆（条目不存在或已被删除）。回复 MUST 据实说明，禁止声称已删除。'
+          }
+          return `- forget_memory：已删除记忆（id=${typeof o.id === 'string' ? o.id : '未知'}）。`
         },
       },
     ]

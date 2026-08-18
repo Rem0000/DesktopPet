@@ -81,6 +81,17 @@ export class ReminderService {
             content: reminder.content,
           }
         },
+        renderForModel: (output: unknown) => {
+          const o = (typeof output === 'object' && output !== null ? output : {}) as {
+            ok?: boolean
+            content?: string
+            fireAt?: string
+          }
+          if (o.ok === false) {
+            return '- schedule_reminder：未能创建提醒。回复 MUST 据实说明，禁止声称已设置。'
+          }
+          return `- schedule_reminder：已设置提醒「${typeof o.content === 'string' ? o.content : ''}」于 ${typeof o.fireAt === 'string' && o.fireAt ? o.fireAt : '指定时间'}。`
+        },
       },
       {
         name: 'cancel_reminder',
@@ -106,6 +117,16 @@ export class ReminderService {
         execute: async (input: { id: string }, _signal: AbortSignal) => {
           const ok = await this.cancel(input.id)
           return { ok, id: input.id }
+        },
+        renderForModel: (output: unknown) => {
+          const o = (typeof output === 'object' && output !== null ? output : {}) as {
+            ok?: boolean
+            id?: string
+          }
+          if (o.ok === false) {
+            return '- cancel_reminder：未能取消该提醒（未找到或已触发）。回复 MUST 据实说明，禁止声称已取消。'
+          }
+          return `- cancel_reminder：已取消提醒（id=${typeof o.id === 'string' ? o.id : '未知'}）。`
         },
       },
     ]

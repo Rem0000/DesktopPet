@@ -34,6 +34,9 @@ export class ToolRegistry {
   register(tool: AgentTool): void {
     if (!tool.name.trim()) throw new Error('工具名称不能为空')
     if (this.tools.has(tool.name)) throw new Error(`工具已注册：${tool.name}`)
+    if (typeof tool.renderForModel !== 'function') {
+      throw new Error(`工具 ${tool.name} 缺少 renderForModel，禁止注册（fail-fast）`)
+    }
     this.tools.set(tool.name, tool)
   }
 

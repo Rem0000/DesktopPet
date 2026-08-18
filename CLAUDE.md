@@ -16,8 +16,10 @@ npm run dev           # Vite dev server + Electron (main + preload built by vite
 npm run typecheck     # tsc for both tsconfig.json and tsconfig.node.json
 npm test              # vitest run (electron/, src/, evals/ *.test.ts)
 npm test -- <file>    # run a single test file (e.g. npm test -- electron/chat/agentRuntime.test.ts)
-npm run eval:retrieval       # retrieval IR eval (P@4/R@4/MRR@10), mock embedding (fast)
+npm run eval:retrieval       # retrieval IR eval (P@4/R@4/R@10/MRR@10/NDCG@10), mock embedding (fast)
 npm run eval:retrieval:real  # same eval with real BGE weights (needs data/models)
+npm run eval:retrieval:kb    # real-KB IR eval: loads data/knowledge 全库语料, real BGE 查询向量 (人工核心 + LLM 补量查询)
+npm run gen:queries          # 用 DeepSeek 从真实库 chunk 生成 LLM 补量查询 (需 DEEPSEEK_API_KEY)
 npm run build         # tsc -p tsconfig.node.json --noEmit && vite build
 npm run pack          # build + electron-builder --dir → release/ (unpacked, for local verify)
 npm run dist          # build + electron-builder → NSIS installer + dir
@@ -37,7 +39,7 @@ IPC channels are namespaced `domain:action` (`live2d:*`, `chat:*`, `memory:*`, `
 
 `electron/chat/agentRuntime.ts` compiles a `StateGraph`: `normalize → recall → plan → toolBoundary → maybeReplan → model → commit`.
 
-- `normalize`: trims context to a char budget (default 24k).
+- `normalize`: trims context to a char budget (default 40k, overridable via `data/config/context-config.json`).
 - `recall`: `MemoryService.assemble` injects cross-model shared profile/facts + the active Live2D package persona (or `DEFAULT_SYSTEM_PROMPT`) + session summary.
 - `plan`: asks the provider (`DeepSeekProvider.planToolCalls`) to propose tool calls from the enabled tools; dedupes and filters already-succeeded memory writes.
 - `toolBoundary`: executes each pending tool (with input validation, confirm gate, and `ToolBoundaryEvent` observability for `data/traces/`).

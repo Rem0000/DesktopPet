@@ -117,6 +117,17 @@ export class RelationshipService {
         const state = await this.store.applyWrite(packageId, input)
         return { ok: true, affinity: state.affinity, stage: state.stage }
       },
+      renderForModel: (output) => {
+        const o = (typeof output === 'object' && output !== null ? output : {}) as {
+          ok?: boolean
+          affinity?: number
+          stage?: string
+        }
+        if (o.ok === false) {
+          return '- update_relationship：未能更新关系（如策略为人设优先/无实际变化）。回复 MUST 据实说明，禁止声称已改变好感或关系状态。'
+        }
+        return `- update_relationship：已更新关系（当前好感 ${typeof o.affinity === 'number' ? o.affinity : '?'}${typeof o.stage === 'string' ? `，阶段 ${o.stage}` : ''}）。`
+      },
     }
     this.tools.register(tool as AgentTool)
   }

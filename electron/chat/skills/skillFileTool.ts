@@ -8,6 +8,29 @@ export type ReadSkillFileInput = {
   path: string
 }
 
+/** 技能资产文件内容进提示词时的长度上限（版本控制资产，受信任；仅防上下文膨胀） */
+const MAX_FILE_RENDER_CHARS = 2_000
+
+/** read_skill_file 成功结果渲染：把技能文件内容透传给模型（技能资产可信，不包不可信区） */
+function renderReadSkillFile(output: unknown): string {
+  const o = (typeof output === 'object' && output !== null ? output : {}) as {
+    ok?: boolean
+    content?: string
+    path?: string
+    skillId?: string
+  }
+  const pathLabel = typeof o.path === 'string' && o.path ? `/${o.path}` : ''
+  const content = typeof o.content === 'string' ? o.content : ''
+  if (!content.trim()) {
+    return `read_skill_file：已读取${pathLabel}（内容为空）。回复 MUST 据实说明，禁止编造文件内容。`
+  }
+  const truncated =
+    content.length > MAX_FILE_RENDER_CHARS
+      ? `${content.slice(0, MAX_FILE_RENDER_CHARS)}…`
+      : content
+  return `read_skill_file：已读取技能文件${pathLabel}，内容如下（可基于此回复，但不得虚构文件中没有的信息）：\n${truncated.split('\n').join('\n  ')}`
+}
+
 /**
  * 读取技能目录内文件(skill.md / script / references)。
  * 仅允许读取技能根目录内,realpath 前缀校验防目录穿越;内容来自随版本控制的技能资产,风险为 safe。
@@ -60,5 +83,6 @@ export function createReadSkillFileTool(
       return { skillId: raw.skillId.trim(), path: raw.path.trim() }
     },
     execute: (input, _signal) => read(input as ReadSkillFileInput),
+    renderForModel: (output) => renderReadSkillFile(output),
   }
 }

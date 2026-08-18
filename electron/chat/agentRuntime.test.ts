@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ChatMessage, ProviderRuntimeConfig } from '../../src/chat/contracts'
+import type { AgentTool, ChatMessage, ProviderRuntimeConfig } from '../../src/chat/contracts'
 import {
   AgentRuntime,
   dedupePendingToolCalls,
@@ -12,6 +12,51 @@ import {
 } from './agentRuntime'
 import { PLAN_TOOL_INSTRUCTION } from './deepSeekProvider'
 import { ToolRegistry } from './toolRegistry'
+import { HistorySearchService } from './historySearch'
+import type { ChatStore } from './chatStore'
+import { KnowledgeService } from './knowledgeService'
+import type { KnowledgeStore } from './knowledgeStore'
+import { formatSkillResultLine } from './skills/skillRegistry'
+
+/** 测试用：给工具注入默认 renderForModel 后再注册（避开 register() 的强制校验） */
+function registerTestTool(registry: ToolRegistry, tool: AgentTool): void {
+  registry.register({
+    ...tool,
+    renderForModel: tool.renderForModel ?? (() => `- ${tool.name}：成功`),
+  })
+}
+
+/** 猜数字三件套的注册表：用生产 formatSkillResultLine 做 renderForModel */
+function skillRegistry(): ToolRegistry {
+  const registry = new ToolRegistry()
+  for (const name of ['generate_secret', 'compare_guess', 'end_game']) {
+    registerTestTool(registry, {
+      name,
+      description: name,
+      parameters: { type: 'object', properties: {} },
+      validate: (input: unknown) => input,
+      execute: async () => ({}),
+      renderForModel: (output: unknown) => formatSkillResultLine(name, output),
+    })
+  }
+  return registry
+}
+
+/** 带生产 renderForModel 的 search_history 注册表 */
+function historySearchRegistry(): ToolRegistry {
+  const registry = new ToolRegistry()
+  const store = { listSessions: () => [], getSession: () => null } as unknown as ChatStore
+  new HistorySearchService(store, registry, () => 'pkg').registerDefaultTools()
+  return registry
+}
+
+/** 带生产 renderForModel 的 search_knowledge 注册表 */
+function knowledgeRegistry(): ToolRegistry {
+  const registry = new ToolRegistry()
+  const store = { search: async () => [] } as unknown as KnowledgeStore
+  new KnowledgeService(store, registry).registerDefaultTools()
+  return registry
+}
 
 const config: ProviderRuntimeConfig = {
   baseUrl: 'https://api.deepseek.com',
@@ -103,7 +148,7 @@ describe('AgentRuntime', () => {
 
   it('执行白名单工具并上报开始/结束观测事件', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住事实',
       enabled: true,
@@ -155,7 +200,7 @@ describe('AgentRuntime', () => {
   it('禁用工具时返回失败观测且不执行', async () => {
     const tools = new ToolRegistry()
     let executed = false
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住事实',
       enabled: true,
@@ -200,7 +245,7 @@ describe('AgentRuntime', () => {
   it('confirm 工具在用户拒绝时不执行', async () => {
     const tools = new ToolRegistry()
     let executed = false
-    tools.register({
+    registerTestTool(tools, {
       name: 'forget_memory',
       description: '遗忘',
       enabled: true,
@@ -244,7 +289,7 @@ describe('AgentRuntime', () => {
   it('支持第二轮再规划工具（先检索再写记忆）并在超限后停止', async () => {
     const tools = new ToolRegistry()
     const executed: string[] = []
-    tools.register({
+    registerTestTool(tools, {
       name: 'search_knowledge',
       description: '检索',
       enabled: true,
@@ -256,7 +301,7 @@ describe('AgentRuntime', () => {
         return { hits: [{ content: '文档说喜欢猫' }] }
       },
     })
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住',
       enabled: true,
@@ -329,30 +374,61 @@ describe('AgentRuntime', () => {
   })
 
   it('formatToolResultsForModel 注入 search_history 命中原文，供模型逐字引用', () => {
-    const note = formatToolResultsForModel([
-      JSON.stringify({
-        tool: 'search_history',
-        ok: true,
-        output: {
-          hits: [
-            { messageId: 'm1', excerpt: '我其实更喜欢喝美式咖啡' },
-            { messageId: 'm2', excerpt: '上次说的那个功能还没做完' },
-          ],
-        },
-      }),
-    ])
+    const note = formatToolResultsForModel(
+      [
+        JSON.stringify({
+          tool: 'search_history',
+          ok: true,
+          output: {
+            hits: [
+              { messageId: 'm1', excerpt: '我其实更喜欢喝美式咖啡' },
+              { messageId: 'm2', excerpt: '上次说的那个功能还没做完' },
+            ],
+          },
+        }),
+      ],
+      '',
+      undefined,
+      historySearchRegistry(),
+    )
     expect(note).toContain('找到 2 条历史记录')
     expect(note).toContain('我其实更喜欢喝美式咖啡')
     expect(note).toContain('上次说的那个功能还没做完')
     expect(note).toContain('逐字取自')
   })
 
+  it('formatToolResultsForModel 委托后 search_knowledge excerpt 仍在提示词中（防 P1 复发）', () => {
+    const note = formatToolResultsForModel(
+      [
+        JSON.stringify({
+          tool: 'search_knowledge',
+          ok: true,
+          output: {
+            hits: [{ excerpt: '验收标准：功能可用性、性能指标、安全性', title: '验收文档' }],
+          },
+        }),
+      ],
+      '',
+      { version: 1 },
+      knowledgeRegistry(),
+    )
+    expect(note).toContain('验收标准：功能可用性、性能指标、安全性')
+    expect(note).toContain('MUST 逐字取自')
+    expect(note).toContain('【外部引用结束】')
+    expect(note).not.toContain('不要复述 JSON')
+  })
+
   it('formatToolResultsForModel 回填猜数字工具的真实结果，供模型每轮引导', () => {
-    const note = formatToolResultsForModel([
-      JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
-      JSON.stringify({ tool: 'compare_guess', ok: true, output: { status: 'high', attempts: 2 } }),
-      JSON.stringify({ tool: 'end_game', ok: true, output: { ended: true } }),
-    ])
+    const note = formatToolResultsForModel(
+      [
+        JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
+        JSON.stringify({ tool: 'compare_guess', ok: true, output: { status: 'high', attempts: 2 } }),
+        JSON.stringify({ tool: 'end_game', ok: true, output: { ended: true } }),
+      ],
+      '',
+      undefined,
+      skillRegistry(),
+    )
     expect(note).toContain('compare_guess 结果：偏大')
     expect(note).toContain('第 2 次猜测')
     expect(note).toContain('end_game：猜数字游戏已结束')
@@ -360,9 +436,14 @@ describe('AgentRuntime', () => {
   })
 
   it('formatToolResultsForModel 不向模型泄露 generate_secret 谜底', () => {
-    const note = formatToolResultsForModel([
-      JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
-    ])
+    const note = formatToolResultsForModel(
+      [
+        JSON.stringify({ tool: 'generate_secret', ok: true, output: { secret: 74, range: '1-100' } }),
+      ],
+      '',
+      undefined,
+      skillRegistry(),
+    )
     expect(note).toContain('谜底已生成')
     expect(note).toContain('先调用 compare_guess')
     expect(note).not.toContain('74')
@@ -370,13 +451,18 @@ describe('AgentRuntime', () => {
   })
 
   it('formatToolResultsForModel 猜中时回填 correct 与泄密文案', () => {
-    const note = formatToolResultsForModel([
-      JSON.stringify({
-        tool: 'compare_guess',
-        ok: true,
-        output: { status: 'correct', attempts: 5, message: '已猜 10 次没猜中,我泄密啦:答案是 74。再陪我玩一次嘛～' },
-      }),
-    ])
+    const note = formatToolResultsForModel(
+      [
+        JSON.stringify({
+          tool: 'compare_guess',
+          ok: true,
+          output: { status: 'correct', attempts: 5, message: '已猜 10 次没猜中,我泄密啦:答案是 74。再陪我玩一次嘛～' },
+        }),
+      ],
+      '',
+      undefined,
+      skillRegistry(),
+    )
     expect(note).toContain('compare_guess 结果：猜中')
     expect(note).toContain('第 5 次猜测')
     expect(note).toContain('答案是 74')
@@ -427,7 +513,7 @@ describe('AgentRuntime', () => {
 
   it('检索后未写记忆时注入生成侧约束到 systemPrompt', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'search_knowledge',
       description: '检索',
       enabled: true,
@@ -436,7 +522,7 @@ describe('AgentRuntime', () => {
       validate: (input) => input,
       execute: async () => ({ hits: [] }),
     })
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住',
       enabled: true,
@@ -486,7 +572,7 @@ describe('AgentRuntime', () => {
 
   it('再规划提示对事实类记住要求 MUST 规划记忆工具', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'search_knowledge',
       description: '检索',
       enabled: true,
@@ -495,7 +581,7 @@ describe('AgentRuntime', () => {
       validate: (input) => input,
       execute: async () => ({ hits: [{ content: '七项验收' }] }),
     })
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住',
       enabled: true,
@@ -540,7 +626,7 @@ describe('AgentRuntime', () => {
 
   it('取消 forget_memory 时注入的 system 约束含取消语义', async () => {
     const tools = new ToolRegistry()
-    tools.register({
+    registerTestTool(tools, {
       name: 'forget_memory',
       description: '遗忘',
       enabled: true,
@@ -577,7 +663,7 @@ describe('AgentRuntime', () => {
   it('仅 remember_fact 时不二次规划，避免双写', async () => {
     const tools = new ToolRegistry()
     let executed = 0
-    tools.register({
+    registerTestTool(tools, {
       name: 'remember_fact',
       description: '记住',
       enabled: true,

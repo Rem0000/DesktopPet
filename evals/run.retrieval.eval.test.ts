@@ -12,6 +12,13 @@ import {
   resetEmbeddingPipelineForTests,
 } from '../electron/retrieval/testHelpers'
 import { VectorStore } from '../electron/retrieval/vectorStore'
+import {
+  mrrAtK,
+  ndcgAtK,
+  precisionAtK,
+  recallAtK,
+  relevantSet,
+} from './retrieval/metrics'
 
 const useRealEmbedding =
   process.env.EVAL_REAL_EMBEDDING === '1' ||
@@ -20,14 +27,20 @@ const useRealEmbedding =
 type KnowledgeCase = {
   id: string
   query: string
-  relevantChunkSuffixes: string[]
+  /** 分级相关性：chunkId 后缀（如 ":1"）→ 相关等级 1–3，缺省为 0（不相关） */
+  relevantChunkGraded?: Record<string, number>
+  /** 二值兜底（旧数据集）：相关 chunk 后缀列表，等价于 grade=1 */
+  relevantChunkSuffixes?: string[]
   documentText: string
 }
 
 type MemoryCase = {
   id: string
   query: string
-  relevantMemoryIds: string[]
+  /** 分级相关性：记忆 id → 相关等级 1–3 */
+  relevantMemoryGraded?: Record<string, number>
+  /** 二值兜底（旧数据集）：相关记忆 id 列表 */
+  relevantMemoryIds?: string[]
   memories: Array<{
     id: string
     content: string
@@ -47,27 +60,19 @@ type RetrievalDataset = {
 const root = path.dirname(fileURLToPath(import.meta.url))
 const datasetPath = path.join(root, 'retrieval', 'queries.json')
 
-function precisionAtK(retrieved: string[], relevant: Set<string>, k: number): number {
-  const top = retrieved.slice(0, k)
-  if (top.length === 0) return 0
-  const hits = top.filter((id) => relevant.has(id)).length
-  return hits / top.length
-}
-
-function recallAtK(retrieved: string[], relevant: Set<string>, k: number): number {
-  if (relevant.size === 0) return 0
-  const top = retrieved.slice(0, k)
-  const hits = top.filter((id) => relevant.has(id)).length
-  return hits / relevant.size
-}
-
-function mrrAtK(retrieved: string[], relevant: Set<string>, k: number): number {
-  const top = retrieved.slice(0, k)
-  for (let index = 0; index < top.length; index += 1) {
-    const id = top[index]
-    if (id && relevant.has(id)) return 1 / (index + 1)
+/** 优先用分级相关性；缺失时退化为二值（grade=1）。prefix 拼接用于知识库 chunkId。 */
+function gradedFromSuffixes(
+  graded: Record<string, number> | undefined,
+  binary: string[] | undefined,
+  prefix: string,
+): Map<string, number> {
+  const map = new Map<string, number>()
+  if (graded) {
+    for (const [suffix, rel] of Object.entries(graded)) map.set(`${prefix}${suffix}`, rel)
+  } else {
+    for (const suffix of binary ?? []) map.set(`${prefix}${suffix}`, 1)
   }
-  return 0
+  return map
 }
 
 beforeEach(() => {
@@ -79,7 +84,7 @@ beforeEach(() => {
 })
 
 describe('retrieval IR eval', () => {
-  it(`输出 P@4、R@4、MRR@10 汇总（知识库 + 记忆）${useRealEmbedding ? ' [REAL_EMBEDDING]' : ' [MOCK_EMBEDDING]'}`, async () => {
+  it(`输出 P@4、R@4、R@10、MRR@10、NDCG@10 汇总（知识库 + 记忆）${useRealEmbedding ? ' [REAL_EMBEDDING]' : ' [MOCK_EMBEDDING]'}`, async () => {
     const raw = await readFile(datasetPath, 'utf8')
     const dataset = JSON.parse(raw) as RetrievalDataset
     expect(dataset.knowledge.length + dataset.memory.length).toBeGreaterThanOrEqual(15)
@@ -87,12 +92,16 @@ describe('retrieval IR eval', () => {
     const knowledgeScores = {
       p4: [] as number[],
       r4: [] as number[],
+      r10: [] as number[],
       mrr10: [] as number[],
+      ndcg10: [] as number[],
     }
     const memoryScores = {
       p4: [] as number[],
       r4: [] as number[],
+      r10: [] as number[],
       mrr10: [] as number[],
+      ndcg10: [] as number[],
     }
 
     for (const item of dataset.knowledge) {
@@ -101,14 +110,19 @@ describe('retrieval IR eval', () => {
         const store = new KnowledgeStore(directory)
         await store.initialize()
         const doc = await store.importText(item.id, item.documentText, `${item.id}.md`)
-        const relevant = new Set(
-          item.relevantChunkSuffixes.map((suffix) => `${doc.id}${suffix}`),
+        const grade = gradedFromSuffixes(
+          item.relevantChunkGraded,
+          item.relevantChunkSuffixes,
+          `${doc.id}`,
         )
+        const relevant = relevantSet(grade)
         const hits = await store.search(item.query, 10)
         const retrieved = hits.map((hit) => hit.chunkId)
         knowledgeScores.p4.push(precisionAtK(retrieved, relevant, 4))
         knowledgeScores.r4.push(recallAtK(retrieved, relevant, 4))
+        knowledgeScores.r10.push(recallAtK(retrieved, relevant, 10))
         knowledgeScores.mrr10.push(mrrAtK(retrieved, relevant, 10))
+        knowledgeScores.ndcg10.push(ndcgAtK(retrieved, grade, 10))
       } finally {
         await rm(directory, { recursive: true, force: true })
       }
@@ -147,10 +161,18 @@ describe('retrieval IR eval', () => {
           getVector: (id) => vectorStore.get(id),
         })
         const retrieved = hits.map((hit) => hit.id)
-        const relevant = new Set(item.relevantMemoryIds)
+        const grade = new Map<string, number>(
+          Object.entries(item.relevantMemoryGraded ?? {}).map(([id, rel]) => [id, rel]),
+        )
+        if (grade.size === 0) {
+          for (const id of item.relevantMemoryIds ?? []) grade.set(id, 1)
+        }
+        const relevant = relevantSet(grade)
         memoryScores.p4.push(precisionAtK(retrieved, relevant, 4))
         memoryScores.r4.push(recallAtK(retrieved, relevant, 4))
+        memoryScores.r10.push(recallAtK(retrieved, relevant, 10))
         memoryScores.mrr10.push(mrrAtK(retrieved, relevant, 10))
+        memoryScores.ndcg10.push(ndcgAtK(retrieved, grade, 10))
 
         const viaService = await retrieveMemories(
           memories,
@@ -174,13 +196,17 @@ describe('retrieval IR eval', () => {
         count: knowledgeScores.p4.length,
         P_at_4: avg(knowledgeScores.p4),
         R_at_4: avg(knowledgeScores.r4),
+        R_at_10: avg(knowledgeScores.r10),
         MRR_at_10: avg(knowledgeScores.mrr10),
+        NDCG_at_10: avg(knowledgeScores.ndcg10),
       },
       memory: {
         count: memoryScores.p4.length,
         P_at_4: avg(memoryScores.p4),
         R_at_4: avg(memoryScores.r4),
+        R_at_10: avg(memoryScores.r10),
         MRR_at_10: avg(memoryScores.mrr10),
+        NDCG_at_10: avg(memoryScores.ndcg10),
       },
     }
 
@@ -188,5 +214,7 @@ describe('retrieval IR eval', () => {
     expect(summary.mode).toBe(useRealEmbedding ? 'real_embedding' : 'mock_embedding')
     expect(summary.knowledge.P_at_4).toBeGreaterThan(0)
     expect(summary.memory.P_at_4).toBeGreaterThan(0)
+    expect(summary.knowledge.NDCG_at_10).toBeGreaterThan(0)
+    expect(summary.memory.NDCG_at_10).toBeGreaterThan(0)
   }, useRealEmbedding ? 120_000 : 30_000)
 })

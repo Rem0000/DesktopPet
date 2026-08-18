@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { formatToolResultsForModel } from '../electron/chat/agentRuntime'
 import { createProvider } from '../electron/chat/providerFactory'
+import { ToolRegistry } from '../electron/chat/toolRegistry'
+import { KnowledgeService } from '../electron/chat/knowledgeService'
+import type { KnowledgeStore } from '../electron/chat/knowledgeStore'
 import type { ProviderRuntimeConfig } from '../src/chat/contracts'
 
 /**
@@ -91,10 +94,16 @@ export function parseJudgeResult(text: string): JudgeVerdict {
 
 /** 组装工具结果块（含 A4 guard），供 judge 上下文 */
 function buildToolNote(scenario: JudgeScenario): string {
+  // registry 提供 search_knowledge 的 renderForModel：检索 excerpt 必须进入 judge 上下文，
+  // 否则 citation-faithful / citation-fabricated 场景看不到原文，judge 无从判断引用忠实度。
+  const registry = new ToolRegistry()
+  const store = { search: async () => [] } as unknown as KnowledgeStore
+  new KnowledgeService(store, registry).registerDefaultTools()
   return formatToolResultsForModel(
     scenario.toolResults.map((raw) => JSON.stringify(raw)),
     scenario.userText,
     { version: 1 },
+    registry,
   )
 }
 
@@ -162,6 +171,12 @@ describe('LLM-as-judge eval', () => {
       details.push({ ...verdict, id: scenario.id, category: scenario.category, expectedPass: scenario.expectedPass })
     }
 
+    const agreement =
+      details.length > 0
+        ? details.filter((detail) => (detail.verdict === 'pass') === detail.expectedPass).length /
+          details.length
+        : 0
+
     console.log(
       '[judge-eval]',
       JSON.stringify(
@@ -170,6 +185,7 @@ describe('LLM-as-judge eval', () => {
           rubric: JUDGE_RUBRIC,
           byCategory,
           passRate: scenarios.length > 0 ? totalPass / scenarios.length : 0,
+          agreement,
           details,
         },
         null,
@@ -177,16 +193,21 @@ describe('LLM-as-judge eval', () => {
       ),
     )
 
-    // mock 模式：verdict 应与 expectedPass 一致（确定性回归）
+    // mock 模式：verdict 应与 expectedPass 完全一致（确定性回归）
     if (!useRealJudge) {
       for (const detail of details) {
         const expected = detail.expectedPass ? 'pass' : 'fail'
         expect(detail.verdict).toBe(expected)
       }
     }
-    // 真 LLM 模式：至少有一条 pass（弱门槛，避免评测形同虚设）
+    // 真 LLM 模式：D5 断言加严——与 expectedPass 的符合率 ≥ 0.8（留噪声余量），
+    // 并锁定 citation 分类 2/2 必过：citation-faithful MUST pass、citation-fabricated MUST fail。
     if (useRealJudge) {
-      expect(totalPass).toBeGreaterThan(0)
+      expect(agreement).toBeGreaterThanOrEqual(0.8)
+      const citation = details.filter((detail) => detail.category === 'citation')
+      expect(citation).toHaveLength(2)
+      expect(citation.find((detail) => detail.id === 'citation-faithful')?.verdict).toBe('pass')
+      expect(citation.find((detail) => detail.id === 'citation-fabricated')?.verdict).toBe('fail')
     }
   }, 120_000)
 })
