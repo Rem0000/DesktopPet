@@ -19,7 +19,7 @@
 ## ADDED Requirements
 
 ### Requirement: 可选 Cross-Encoder Reranker
-系统 SHALL 提供可选的 cross-encoder reranker 服务：通过 `@xenova/transformers` 的 text-classification 任务加载本地或远端 BGE reranker 模型，对 `query [SEP] passage` 打分得到相关性分数。该服务 SHALL 支持本地权重优先加载、远端兜底、加载状态可观测；模型缺失时 SHALL 给出可下载提示，且不阻断未启用 reranker 的既有检索路径。
+系统 SHALL 提供可选的 cross-encoder reranker 服务：通过 `@xenova/transformers` 的 `AutoTokenizer + AutoModel` 加载本地或远端 BGE reranker 模型，对 `query [SEP] passage` 取原始 logit 并手动 sigmoid 得到相关性分数（`text-classification` pipeline 对单类模型恒返回 1、不可用）。该服务 SHALL 支持本地权重优先加载、远端兜底、加载状态可观测；模型缺失时 SHALL 给出可下载提示，且不阻断未启用 reranker 的既有检索路径。
 
 #### Scenario: 本地权重优先
 - **WHEN** `data/models/bge-reranker-base/` 存在本地权重

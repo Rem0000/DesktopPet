@@ -20,8 +20,8 @@
 
 ## Decisions
 
-**D1：用 `@xenova/transformers` 的 `text-classification` 加载 bge-reranker-base 实现重排。**
-`@xenova/transformers` 2.17.2 无 `rerank` 任务，但 bge-reranker-base 是 cross-encoder，`pipeline('text-classification')` 输入 `query [SEP] passage` 可输出 sigmoid 相关分。零新增依赖，复用 embeddingService 的本地优先/远程兜底/手动提示模式。
+**D1（修订）：用 `@xenova/transformers` 的 `AutoTokenizer + AutoModel` 加载 bge-reranker-base 实现重排。**
+原方案用 `text-classification` pipeline（输入 `query [SEP] passage` 取 sigmoid 分）在真实模型上**失效**：bge-reranker-base 是单输出 logit 的 cross-encoder（config `id2label` 仅 `LABEL_0`，`num_labels=1`），pipeline 对单类恒返回 `score=1`、`function_to_apply` 不生效，拿不到相关分。修订为 `AutoTokenizer.from_pretrained` + `AutoModel.from_pretrained` 取原始 logit，手动 `sigmoid(logit)` 得相关分（本地实测有区分度：相关片段 sigmoid≈0.008 vs 无关≈0.00004）。零新增依赖，复用 embeddingService 的本地优先/远程兜底/手动提示模式。
 - 备选：`bge-reranker-v2-m3`（更大更准但 568M 参数）→ 体积过大；自研交叉注意力打分 → 不可行。
 
 **D2：reranker 以注入式回调挂在 `HybridSearchOptions.reranker`，而非硬编码进 hybridSearch。**
@@ -40,7 +40,7 @@ hybridSearch 在 results 构建后调用 reranker，把分数写回 `rerankScore
 ## Risks / Trade-offs
 
 - **模型下载体积（~270MB）** → 首次评测触发下载；提供 `huggingface-cli download` 手动路径；下载失败只跑 baseline 并打印手动提示。
-- **rerank 延迟**（20 候选 = 20 次 cross-encoder 前向，CPU 数百 ms）→ app 默认关闭；仅评测开启；若验证有效再评估默认启用。
+- **rerank 延迟**（实测 10 候选 ~1.3s/次检索 vs baseline ~46ms，~130ms/前向）→ **app 默认关闭（已定）**；rerank 作为可选项保留（构造参数 `enableRerank`，app 不传即关）。评测跑三配置对比验证提升（全指标 +），但延迟代价在对话流里发生在 LLM 回复前、不可忽略；后续若优化延迟（缩小候选池/批处理/缓存）再评估默认启用。
 - **rerank 分过滤可能放行低质量候选** → 用 `rerankScore>0` 作最小门（sigmoid 接近 0 的视为不相关）；配合阈值 A/B 观察 P@4 是否下滑。
 - **0.55→低阈值可能提升 R@10 但拉低 P@4** → 评测三配置对比，诚实汇报权衡，不强行断言全指标提升。
 
@@ -50,5 +50,5 @@ hybridSearch 在 results 构建后调用 reranker，把分数写回 `rerankScore
 
 ## Open Questions
 
-- 若 reranker 有效，是否 app 默认开启？（待评测数据后再定）
+- 若 reranker 有效，是否 app 默认开启？（**已答**：评测全指标提升但实测延迟 ~1.3s/次，决定 app 默认关闭，保留可选项；延迟优化后再议。）
 - rerankTopK 是否随启用自动提到 20，还是保持 10？（当前设计：启用时 eval 显式传 20）

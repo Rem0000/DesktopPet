@@ -27,6 +27,63 @@ describe('hybridSearch', () => {
     expect(hits[0]?.id).toBe('a')
     expect(['sparse', 'vector', 'both']).toContain(hits[0]?.recallSource)
   })
+
+  it('启用 fake reranker 时最终顺序跟随 rerank 分', async () => {
+    installMockEmbeddingPipeline()
+    const corpus = [
+      { id: 'a', text: '秋招智能体路线 本地知识库 RAG' },
+      { id: 'b', text: 'Live2D 导入与动作播放' },
+      { id: 'c', text: '番茄钟番茄钟 番茄钟番茄钟' },
+    ]
+    const vectors = new Map<string, number[]>([
+      ['a', [0.9, 0.1, 0, 0, 0, 0, 0, 0]],
+      ['b', [0.1, 0.9, 0, 0, 0, 0, 0, 0]],
+      ['c', [0, 0, 0.9, 0.1, 0, 0, 0, 0]],
+    ])
+
+    // 与线性分无关的确定性打分：c > b > a
+    const rerankOrder: Record<string, number> = { a: 1, b: 2, c: 3 }
+    const hits = await hybridSearch('秋招路线 RAG', corpus, {
+      topK: 3,
+      embedQuery: async () => [0.85, 0.15, 0, 0, 0, 0, 0, 0],
+      getVector: (id) => vectors.get(id),
+      reranker: async (_query, candidates) =>
+        candidates.map((candidate) => ({
+          id: candidate.id,
+          score: rerankOrder[candidate.id] ?? 0,
+        })),
+    })
+
+    expect(hits.map((hit) => hit.id)).toEqual(['c', 'b', 'a'])
+    expect(hits[0]?.rerankScore).toBe(3)
+    expect(hits[2]?.rerankScore).toBe(1)
+  })
+
+  it('reranker 打分抛错时回退线性 Rerank，检索不中断', async () => {
+    installMockEmbeddingPipeline()
+    const corpus = [
+      { id: 'a', text: '秋招智能体路线 本地知识库 RAG' },
+      { id: 'b', text: 'Live2D 导入与动作播放' },
+      { id: 'c', text: '番茄钟不在本期范围' },
+    ]
+    const vectors = new Map<string, number[]>([
+      ['a', [0.9, 0.1, 0, 0, 0, 0, 0, 0]],
+      ['b', [0.1, 0.9, 0, 0, 0, 0, 0, 0]],
+      ['c', [0, 0, 0.9, 0.1, 0, 0, 0, 0]],
+    ])
+
+    const hits = await hybridSearch('秋招路线 RAG', corpus, {
+      topK: 2,
+      embedQuery: async () => [0.85, 0.15, 0, 0, 0, 0, 0, 0],
+      getVector: (id) => vectors.get(id),
+      reranker: async () => {
+        throw new Error('reranker 模型不可用')
+      },
+    })
+
+    expect(hits[0]?.id).toBe('a')
+    expect(hits[0]?.rerankScore).toBeUndefined()
+  })
 })
 
 describe('Bm25Index', () => {

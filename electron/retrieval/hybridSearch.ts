@@ -115,6 +115,29 @@ export async function hybridSearch(
     })
   }
 
+  // 可选 cross-encoder 重排：对候选集打分写回 rerankScore；打分抛错时回退线性路径
+  let rerankScores: Map<string, number> | null = null
+  if (options.reranker) {
+    try {
+      const reranked = await options.reranker(
+        query,
+        results.map((hit) => ({ id: hit.id, text: hit.text })),
+      )
+      rerankScores = new Map(reranked.map((entry) => [entry.id, entry.score]))
+    } catch (error) {
+      console.warn('[retrieval] reranker 打分失败，回退线性 Rerank：', error)
+      rerankScores = null
+    }
+  }
+
+  if (rerankScores) {
+    return results
+      .map((hit) => ({ ...hit, rerankScore: rerankScores.get(hit.id) ?? -Infinity }))
+      .filter((hit) => hit.rerankScore > 0)
+      .sort((a, b) => b.rerankScore - a.rerankScore)
+      .slice(0, options.topK)
+  }
+
   return results
     .filter((hit) => hit.score >= minScore && (hit.sparseScore > 0 || hit.vectorScore >= 0.2))
     .sort((a, b) => b.score - a.score)

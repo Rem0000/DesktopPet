@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { KnowledgeStore } from '../electron/chat/knowledgeStore'
 import { ensureEmbeddingModelLoaded } from '../electron/retrieval/embeddingService'
+import { ensureRerankerModelLoaded } from '../electron/retrieval/rerankerService'
 import {
   mrrAtK,
   ndcgAtK,
@@ -18,6 +19,9 @@ import {
  *
  * 语料向量是真实 BGE 生成的，查询向量也必须是真实 BGE，因此本评测固定 real embedding。
  * 仅通过 `npm run eval:retrieval:kb` 真正执行；普通 `npm test` 会命中但跳过，避免拖慢默认套件。
+ *
+ * A/B：同一 64 条查询跑 baseline（默认）/ +reranker / +reranker 低阈值 三组对比。
+ * reranker 模型不可用（未下载/加载失败）时只跑 baseline、不 fail。
  */
 const root = path.dirname(fileURLToPath(import.meta.url))
 const kbDir = path.resolve(process.cwd(), 'data/knowledge')
@@ -50,8 +54,56 @@ function resolveKey(key: string, documents: Record<string, string>): string {
 const avg = (values: number[]) =>
   values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
 
+type ConfigSummary = {
+  label: string
+  P_at_4: number
+  R_at_4: number
+  R_at_10: number
+  MRR_at_10: number
+  NDCG_at_10: number
+}
+
+async function runConfig(
+  label: string,
+  store: KnowledgeStore,
+  queries: RealQuery[],
+  documents: Record<string, string>,
+): Promise<ConfigSummary> {
+  const scores = {
+    p4: [] as number[],
+    r4: [] as number[],
+    r10: [] as number[],
+    mrr10: [] as number[],
+    ndcg10: [] as number[],
+  }
+  for (const q of queries) {
+    const grade = new Map<string, number>()
+    for (const [key, rel] of Object.entries(q.relevantChunkGraded)) {
+      grade.set(resolveKey(key, documents), rel)
+    }
+    const relevant = relevantSet(grade)
+    const hits = await store.search(q.query, 10)
+    const retrieved = hits.map((hit) => hit.chunkId)
+    scores.p4.push(precisionAtK(retrieved, relevant, 4))
+    scores.r4.push(recallAtK(retrieved, relevant, 4))
+    scores.r10.push(recallAtK(retrieved, relevant, 10))
+    scores.mrr10.push(mrrAtK(retrieved, relevant, 10))
+    scores.ndcg10.push(ndcgAtK(retrieved, grade, 10))
+  }
+  const summary: ConfigSummary = {
+    label,
+    P_at_4: avg(scores.p4),
+    R_at_4: avg(scores.r4),
+    R_at_10: avg(scores.r10),
+    MRR_at_10: avg(scores.mrr10),
+    NDCG_at_10: avg(scores.ndcg10),
+  }
+  console.log('[retrieval-kb-eval]', JSON.stringify(summary, null, 2))
+  return summary
+}
+
 describe('真实知识库检索 IR 评测（全库语料）', () => {
-  it('加载 data/knowledge，输出 P@4/R@4/R@10/MRR@10/NDCG@10', async () => {
+  it('baseline / +reranker / +reranker 低阈值 三配置对比', async () => {
     if (!isKbRun) {
       console.log('[retrieval-kb-eval] 未通过 npm run eval:retrieval:kb 运行，跳过')
       return
@@ -84,42 +136,64 @@ describe('真实知识库检索 IR 评测（全库语料）', () => {
     // 库内向量是真实 embedding，查询向量必须同源
     await ensureEmbeddingModelLoaded()
 
-    const scores = {
-      p4: [] as number[],
-      r4: [] as number[],
-      r10: [] as number[],
-      mrr10: [] as number[],
-      ndcg10: [] as number[],
-    }
-    for (const q of queries) {
-      const grade = new Map<string, number>()
-      for (const [key, rel] of Object.entries(q.relevantChunkGraded)) {
-        grade.set(resolveKey(key, core.documents), rel)
-      }
-      const relevant = relevantSet(grade)
-      const hits = await store.search(q.query, 10)
-      const retrieved = hits.map((hit) => hit.chunkId)
-      scores.p4.push(precisionAtK(retrieved, relevant, 4))
-      scores.r4.push(recallAtK(retrieved, relevant, 4))
-      scores.r10.push(recallAtK(retrieved, relevant, 10))
-      scores.mrr10.push(mrrAtK(retrieved, relevant, 10))
-      scores.ndcg10.push(ndcgAtK(retrieved, grade, 10))
+    console.log(
+      '[retrieval-kb-eval]',
+      JSON.stringify(
+        {
+          mode: 'real_embedding',
+          corpus: { documents: docs.length, chunks: idx.chunks.length },
+          queries: { core: core.knowledge.length, llm: llmQueries.length, total: queries.length },
+        },
+        null,
+        2,
+      ),
+    )
+
+    const configs: ConfigSummary[] = []
+    configs.push(await runConfig('baseline（默认）', store, queries, core.documents))
+
+    let rerankerAvailable = true
+    try {
+      await ensureRerankerModelLoaded()
+    } catch (error) {
+      rerankerAvailable = false
+      console.log(
+        '[retrieval-kb-eval] reranker 模型不可用，跳过 rerank 配置对比（仅 baseline）：',
+        error,
+      )
     }
 
-    const summary = {
-      mode: 'real_embedding',
-      corpus: { documents: docs.length, chunks: idx.chunks.length },
-      queries: { core: core.knowledge.length, llm: llmQueries.length, total: queries.length },
-      P_at_4: avg(scores.p4),
-      R_at_4: avg(scores.r4),
-      R_at_10: avg(scores.r10),
-      MRR_at_10: avg(scores.mrr10),
-      NDCG_at_10: avg(scores.ndcg10),
-    }
-    console.log('[retrieval-kb-eval]', JSON.stringify(summary, null, 2))
+    if (rerankerAvailable) {
+      const rerankLow = new KnowledgeStore(kbDir, {
+        enableRerank: true,
+        vectorScoreThreshold: 0.2,
+        rerankTopK: 20,
+      })
+      await rerankLow.initialize()
+      configs.push(await runConfig('+reranker（阈值 0.2）', rerankLow, queries, core.documents))
 
-    expect(summary.P_at_4).toBeGreaterThan(0)
-    expect(summary.R_at_10).toBeGreaterThan(0)
-    expect(summary.NDCG_at_10).toBeGreaterThan(0)
-  }, 180_000)
+      const rerankMid = new KnowledgeStore(kbDir, {
+        enableRerank: true,
+        vectorScoreThreshold: 0.35,
+        rerankTopK: 20,
+      })
+      await rerankMid.initialize()
+      configs.push(await runConfig('+reranker 阈值 0.35', rerankMid, queries, core.documents))
+    }
+
+    console.log('[retrieval-kb-eval] 三配置对比（P@4 / R@4 / R@10 / MRR@10 / NDCG@10）')
+    for (const config of configs) {
+      console.log(
+        `[retrieval-kb-eval] ${config.label}: ` +
+          `P@4=${config.P_at_4.toFixed(3)} R@4=${config.R_at_4.toFixed(3)} ` +
+          `R@10=${config.R_at_10.toFixed(3)} MRR@10=${config.MRR_at_10.toFixed(3)} ` +
+          `NDCG@10=${config.NDCG_at_10.toFixed(3)}`,
+      )
+    }
+
+    const baseline = configs[0]!
+    expect(baseline.P_at_4).toBeGreaterThan(0)
+    expect(baseline.R_at_10).toBeGreaterThan(0)
+    expect(baseline.NDCG_at_10).toBeGreaterThan(0)
+  }, 600_000)
 })

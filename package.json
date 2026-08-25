@@ -17,6 +17,9 @@
     "gen:queries": "vitest run --config vitest.config.ts evals/retrieval/generateQueries.test.ts",
     "eval:judge": "vitest run --config vitest.config.ts evals/run.judge.eval.test.ts",
     "eval:judge:real": "vitest run --config vitest.config.ts evals/run.judge.eval.test.ts",
+    "eval:faithfulness": "vitest run --config vitest.config.ts evals/run.faithfulness.eval.test.ts",
+    "eval:faithfulness:real": "vitest run --config vitest.config.ts evals/run.faithfulness.eval.test.ts",
+    "eval:faithfulness:kb": "vitest run --config vitest.config.ts evals/run.faithfulness.kb.eval.test.ts",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },

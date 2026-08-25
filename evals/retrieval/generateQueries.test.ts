@@ -26,6 +26,9 @@ const TARGET_QUERIES = 40
 const BATCH_SIZE = 8
 const SEED = 20260818
 
+/** 生成是数据工程任务而非测试：仅经 `npm run gen:queries` 执行，普通 npm test 跳过（即使 env 有 key） */
+const isGenRun = process.env.npm_lifecycle_event === 'gen:queries'
+
 const root = path.dirname(fileURLToPath(import.meta.url))
 const core = coreDataset as {
   documents: Record<string, string>
@@ -84,6 +87,10 @@ describe('parseQueries（LLM 回复解析）', () => {
 
 describe('生成 LLM 补量查询集', () => {
   it('从真实知识库 chunk 生成查询并写入 queries.llm.json', async () => {
+    if (!isGenRun) {
+      console.log('[gen-queries] 未通过 npm run gen:queries 运行，跳过 LLM 补量')
+      return
+    }
     const apiKey = process.env.DEEPSEEK_API_KEY
     if (!apiKey) {
       console.log('[gen-queries] 缺少 DEEPSEEK_API_KEY，跳过 LLM 补量（queries.llm.json 未生成）')

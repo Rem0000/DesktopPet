@@ -13,8 +13,18 @@ export type HybridSearchResult = {
   sparseScore: number
   vectorScore: number
   recallSource: RecallSource
+  /** 启用可选 cross-encoder 重排时写入的相关性分；未启用或回退线性时为 undefined */
+  rerankScore?: number
   metadata?: Record<string, unknown>
 }
+
+export type RerankItem = { id: string; text: string }
+export type RerankScore = { id: string; score: number }
+/** 可选 cross-encoder 重排回调：对候选集打分，返回候选子集及其相关性分 */
+export type RerankFn = (
+  query: string,
+  candidates: RerankItem[],
+) => Promise<RerankScore[]>
 
 export type HybridSearchOptions = {
   topK: number
@@ -34,6 +44,11 @@ export type HybridSearchOptions = {
    */
   searchVector?: (queryVector: number[], topK: number) => Array<{ id: string; score: number }>
   metadataBoost?: (item: RetrievalCorpusItem) => number
+  /**
+   * 可选 cross-encoder 重排：传入时对 RRF 融合后的候选集打分，最终排序以 rerank 分为准；
+   * 缺失或打分抛错时回退原线性 Rerank 路径（行为不变）。
+   */
+  reranker?: RerankFn
 }
 
 export const HYBRID_DEFAULTS = {
@@ -93,3 +108,21 @@ export function buildManualDownloadHint(cacheDir: string): string {
     '放置完成后重启应用或触发「重试加载模型」。',
   ].join('\n')
 }
+
+export const BGE_RERANKER_MODEL_ID = 'Xenova/bge-reranker-base'
+/** 手动放置时推荐的本地子目录名（位于 data/models/ 下） */
+export const BGE_RERANKER_LOCAL_DIR = 'bge-reranker-base'
+
+export function buildRerankerManualDownloadHint(cacheDir: string): string {
+  const localDir = `${cacheDir}\\${BGE_RERANKER_LOCAL_DIR}`
+  return [
+    `请手动下载 BGE-Reranker-Base（${BGE_RERANKER_MODEL_ID}）权重并放入：`,
+    localDir,
+    `示例：huggingface-cli download Xenova/bge-reranker-base --local-dir "${localDir}"`,
+    '至少需要 tokenizer 相关文件与 onnx/model_quantized.onnx（或 onnx/model.onnx）。',
+    '放置完成后重启应用或触发「重试加载模型」。',
+  ].join('\n')
+}
+
+/** Reranker 服务加载状态：结构与 EmbeddingModelStatus 一致，语义针对重排模型 */
+export type RerankerModelStatus = EmbeddingModelStatus

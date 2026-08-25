@@ -14,7 +14,8 @@ import { chunkMarkdown } from '../retrieval/markdownChunker'
 import { extractSearchTerms } from '../retrieval/tokenize'
 import { AnnVectorStore } from '../retrieval/annVectorStore'
 import { atomicWriteTextFile } from '../fsAtomic'
-import { EmbeddingModelError } from '../retrieval/types'
+import * as rerankService from '../retrieval/rerankerService'
+import { EmbeddingModelError, type RerankItem } from '../retrieval/types'
 
 export type KnowledgeDocument = {
   id: string
@@ -92,21 +93,40 @@ export function scoreChunk(chunk: KnowledgeChunk, query: string): number {
   return score
 }
 
+export type KnowledgeStoreOptions = {
+  /** 启用可选 cross-encoder 重排（默认 false，行为不变） */
+  enableRerank?: boolean
+  /** 后置向量分数过滤阈值（默认 0.55，与既有行为一致） */
+  vectorScoreThreshold?: number
+  /** 启用重排时交给 reranker 的候选 topK（默认 20） */
+  rerankTopK?: number
+  /** rerank 候选池：RRF 融合后喂给 reranker 的候选数（默认 10，与 hybridSearch 一致）。缩小可降低延迟，但会限制可返回条数上限 */
+  rerankCandidateTopK?: number
+}
+
 export class KnowledgeStore {
   private readonly root: string
   private readonly docsDir: string
   private readonly indexPath: string
   private readonly vectorStore: AnnVectorStore
+  private readonly enableRerank: boolean
+  private readonly vectorScoreThreshold: number
+  private readonly rerankTopK: number
+  private readonly rerankCandidateTopK: number
   private index = emptyIndex()
   private initialized = false
   private writeQueue: Promise<void> = Promise.resolve()
   private rebuildQueue: Promise<void> = Promise.resolve()
 
-  constructor(storageDirectory: string) {
+  constructor(storageDirectory: string, options: KnowledgeStoreOptions = {}) {
     this.root = storageDirectory
     this.docsDir = path.join(this.root, 'documents')
     this.indexPath = path.join(this.root, 'index.json')
     this.vectorStore = new AnnVectorStore(path.join(this.root, 'vectors.json'))
+    this.enableRerank = options.enableRerank ?? false
+    this.vectorScoreThreshold = options.vectorScoreThreshold ?? 0.55
+    this.rerankTopK = options.rerankTopK ?? 20
+    this.rerankCandidateTopK = options.rerankCandidateTopK ?? 10
   }
 
   async initialize(): Promise<void> {
@@ -249,6 +269,13 @@ export class KnowledgeStore {
       embedQuery,
       getVector: (id) => this.vectorStore.get(id),
       searchVector: (queryVector, k) => this.vectorStore.searchVector(queryVector, k),
+      ...(this.enableRerank
+        ? {
+            rerankTopK: this.rerankCandidateTopK,
+            reranker: (q: string, candidates: RerankItem[]) =>
+              rerankService.rerank(q, candidates, this.rerankTopK),
+          }
+        : {}),
       metadataBoost: (item) => {
         const headingPath = (item.metadata?.headingPath as string[] | undefined) ?? []
         const joined = headingPath.join(' ').toLowerCase()
@@ -262,7 +289,7 @@ export class KnowledgeStore {
     })
 
     return hits
-      .filter((hit) => hit.sparseScore > 0 || hit.vectorScore >= 0.55).map((hit) => {
+      .filter((hit) => hit.sparseScore > 0 || hit.vectorScore >= this.vectorScoreThreshold).map((hit) => {
       const chunk = this.index.chunks.find((item) => item.chunkId === hit.id)
       if (!chunk) {
         throw new Error(`缺失 chunk：${hit.id}`)

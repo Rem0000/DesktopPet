@@ -1,0 +1,338 @@
+[
+  {
+    "id": "grounded-verbatim",
+    "category": "grounded",
+    "description": "答案逐字引用召回片段，全部 claim 有依据",
+    "query": "知识库支持导入哪些文件格式？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。"
+    ],
+    "answer": "知识库支持导入 .md 与 .txt 文件，按 Markdown 标题结构自动切块。",
+    "groundTruth": {
+      "faithful": true,
+      "supportedClaims": ["支持导入 .md 与 .txt 文件", "按 Markdown 标题结构自动切块"],
+      "unsupportedClaims": []
+    }
+  },
+  {
+    "id": "grounded-paraphrase",
+    "category": "grounded",
+    "description": "答案改写同义但语义完全来自召回片段",
+    "query": "知识库检索的结果需要怎么引用？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "检索命中片段必须逐字引用，不得补充片段之外的任何内容。"
+    ],
+    "answer": "回答时要严格以检索到的片段为准，片段之外的信息不能写进回复。",
+    "groundTruth": {
+      "faithful": true,
+      "supportedClaims": ["回答以检索到的片段为准", "片段之外的信息不能写进回复"],
+      "unsupportedClaims": []
+    }
+  },
+  {
+    "id": "grounded-synthesis",
+    "category": "grounded",
+    "description": "答案综合两条召回片段，均逐字有据",
+    "query": "关系亲密度怎么增减？",
+    "documents": [
+      {
+        "title": "关系系统说明",
+        "content": "# 关系系统说明\n\n## 亲密度\n关系亲密度用 0 到 100 的数值表示。每次对话后 update_relationship 可在当前值基础上增减，单次上限为正负 10。亲密度影响关系阶段与注入语气。\n\n## 策略\n关系写入遵循人设优先策略，特定人设下可能冻结增减。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "关系亲密度用 0 到 100 的数值表示。",
+      "每次对话后 update_relationship 可在当前值基础上增减，单次上限为正负 10。"
+    ],
+    "answer": "亲密度在 0 到 100 之间，每次对话可通过 update_relationship 增减，单次最多正负 10。",
+    "groundTruth": {
+      "faithful": true,
+      "supportedClaims": ["亲密度在 0 到 100 之间", "每次对话可通过 update_relationship 增减", "单次最多正负 10"],
+      "unsupportedClaims": []
+    }
+  },
+  {
+    "id": "grounded-summary",
+    "category": "grounded",
+    "description": "答案概括召回片段，语义忠实（real 模式现场生成）",
+    "query": "记忆是怎么组织的？",
+    "documents": [
+      {
+        "title": "记忆功能说明",
+        "content": "# 记忆功能说明\n\n## 记忆分类\n记忆按类型分为画像（profile）、事实（fact）与关键事件（episode），三类各自独立存储。画像记录用户稳定属性，事实记录具体信息，关键事件沉淀重要节点。\n\n## 检索\n记忆通过混合检索召回，相关记忆会注入对话上下文。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "记忆按类型分为画像（profile）、事实（fact）与关键事件（episode），三类各自独立存储。"
+    ],
+    "generate": true,
+    "groundTruth": {
+      "faithful": true,
+      "supportedClaims": ["记忆分为画像、事实与关键事件三类", "三类各自独立存储"]
+    }
+  },
+  {
+    "id": "hallucinated-number",
+    "category": "hallucination",
+    "description": "答案编造片段没有的文件格式与数量",
+    "query": "知识库支持哪些文件格式？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。"
+    ],
+    "answer": "知识库支持导入 .md、.txt 以及 .docx、.pdf 共四种格式。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": ["支持导入 .md 与 .txt"],
+      "unsupportedClaims": ["支持导入 .docx、.pdf", "共四种格式"]
+    }
+  },
+  {
+    "id": "hallucinated-source",
+    "category": "hallucination",
+    "description": "答案编造向量模型的来源名称",
+    "query": "检索用的是什么向量模型？",
+    "documents": [
+      {
+        "title": "本地检索架构",
+        "content": "# 本地检索架构\n\n## 融合\n混合检索用 BM25 稀疏检索与 BGE 向量检索融合（RRF 融合）。稀疏与向量两路结果用 RRF（倒数排名融合）合并。\n\n## 后置过滤\n后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "混合检索用 BM25 稀疏检索与 BGE 向量检索融合（RRF 融合）。"
+    ],
+    "answer": "用的是 BM25 加 BGE 向量检索，其中 BGE 指的是 HuggingFace 的 bert-base 模型。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": ["用的是 BM25 加 BGE 向量检索"],
+      "unsupportedClaims": ["BGE 指的是 HuggingFace 的 bert-base 模型"]
+    }
+  },
+  {
+    "id": "hallucinated-capability",
+    "category": "hallucination",
+    "description": "答案编造片段没有的配置能力",
+    "query": "检索阈值可以调吗？",
+    "documents": [
+      {
+        "title": "本地检索架构",
+        "content": "# 本地检索架构\n\n## 融合\n混合检索用 BM25 稀疏检索与 BGE 向量检索融合（RRF 融合）。稀疏与向量两路结果用 RRF（倒数排名融合）合并。\n\n## 后置过滤\n后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+    ],
+    "answer": "可以调，也支持通过配置界面直接修改默认值。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["支持通过配置界面直接修改默认值"]
+    }
+  },
+  {
+    "id": "hallucinated-contradiction",
+    "category": "hallucination",
+    "description": "答案与召回片段直接矛盾",
+    "query": "导入支持哪些格式？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "仅支持导入 .md / .txt 文件，其它格式会被拒绝。"
+    ],
+    "answer": "导入没有格式限制，任何文件都能导入。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["导入没有格式限制", "任何文件都能导入"]
+    }
+  },
+  {
+    "id": "misquote-number",
+    "category": "misquote",
+    "description": "答案改动片段中的具体数字（0.55 → 0.6）",
+    "query": "向量分数阈值默认是多少？",
+    "documents": [
+      {
+        "title": "本地检索架构",
+        "content": "# 本地检索架构\n\n## 融合\n混合检索用 BM25 稀疏检索与 BGE 向量检索融合（RRF 融合）。稀疏与向量两路结果用 RRF（倒数排名融合）合并。\n\n## 后置过滤\n后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+    ],
+    "answer": "后置向量分数阈值默认是 0.6。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["后置向量分数阈值默认是 0.6"]
+    }
+  },
+  {
+    "id": "misquote-term",
+    "category": "misquote",
+    "description": "答案把融合算法名换成片段没有的另一种说法",
+    "query": "检索怎么融合？",
+    "documents": [
+      {
+        "title": "本地检索架构",
+        "content": "# 本地检索架构\n\n## 融合\n混合检索用 BM25 稀疏检索与 BGE 向量检索融合（RRF 融合）。稀疏与向量两路结果用 RRF（倒数排名融合）合并。\n\n## 后置过滤\n后置向量分数阈值默认 0.55，可在构造 KnowledgeStore 时通过 options.vectorScoreThreshold 调整。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "稀疏与向量两路结果用 RRF（倒数排名融合）合并。"
+    ],
+    "answer": "两路结果用加权平均的方式合并。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["两路结果用加权平均的方式合并"]
+    }
+  },
+  {
+    "id": "misquote-polarity",
+    "category": "misquote",
+    "description": "答案把格式限制的极性反转（严格 → 基本都能通过）",
+    "query": "导入的格式限制严格吗？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "导入严格限制为 .md 与 .txt，其它格式一律拒绝。"
+    ],
+    "answer": "导入除了 .md 与 .txt，其它格式基本都可以通过。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["其它格式基本都可以通过"]
+    }
+  },
+  {
+    "id": "partial-unsupported-tail",
+    "category": "partial",
+    "description": "答案前半有据、尾部补一个片段外行为",
+    "query": "记忆分哪几类？",
+    "documents": [
+      {
+        "title": "记忆功能说明",
+        "content": "# 记忆功能说明\n\n## 记忆分类\n记忆按类型分为画像（profile）、事实（fact）与关键事件（episode），三类各自独立存储。画像记录用户稳定属性，事实记录具体信息，关键事件沉淀重要节点。\n\n## 检索\n记忆通过混合检索召回，相关记忆会注入对话上下文。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "记忆按类型分为画像（profile）、事实（fact）与关键事件（episode），三类各自独立存储。"
+    ],
+    "answer": "记忆按类型分为画像、事实和关键事件三类，其中画像会每周自动备份一次。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": ["记忆分为画像、事实和关键事件三类"],
+      "unsupportedClaims": ["画像会每周自动备份一次"]
+    }
+  },
+  {
+    "id": "partial-overgeneralize",
+    "category": "partial",
+    "description": "答案把有上限的增减过度泛化为任意增减",
+    "query": "单次关系增减上限多少？",
+    "documents": [
+      {
+        "title": "关系系统说明",
+        "content": "# 关系系统说明\n\n## 亲密度\n关系亲密度用 0 到 100 的数值表示。每次对话后 update_relationship 可在当前值基础上增减，单次上限为正负 10。亲密度影响关系阶段与注入语气。\n\n## 策略\n关系写入遵循人设优先策略，特定人设下可能冻结增减。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "每次对话后 update_relationship 可在当前值基础上增减，单次上限为正负 10。"
+    ],
+    "answer": "亲密度可以任意增减，比如每次调整正负 10。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": ["每次调整上限为正负 10"],
+      "unsupportedClaims": ["亲密度可以任意增减"]
+    }
+  },
+  {
+    "id": "partial-invented-detail",
+    "category": "partial",
+    "description": "答案在真实检索流程后补一个片段外副作用",
+    "query": "知识库导入后怎么检索？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。"
+    ],
+    "answer": "导入后通过 search_knowledge 检索，命中片段会标注来源标题，且每条检索都会写入检索历史。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": ["导入后通过 search_knowledge 检索", "命中片段会标注来源标题"],
+      "unsupportedClaims": ["每条检索都会写入检索历史"]
+    }
+  },
+  {
+    "id": "unanswerable-honest",
+    "category": "unanswerable",
+    "description": "召回片段与问题无关，如实说明未找到（real 模式现场生成，验证不编造）",
+    "query": "桌面宠物的音乐播放功能怎么开启？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。",
+      "检索命中片段必须逐字引用，不得补充片段之外的任何内容。"
+    ],
+    "generate": true,
+    "groundTruth": {
+      "faithful": true,
+      "supportedClaims": ["如实说明知识库中未找到相关内容"]
+    }
+  },
+  {
+    "id": "unanswerable-fabricate",
+    "category": "unanswerable",
+    "description": "召回片段与问题无关，但仍编造操作步骤",
+    "query": "桌面宠物的音乐播放功能怎么开启？",
+    "documents": [
+      {
+        "title": "知识库导入与引用指南",
+        "content": "# 知识库导入与引用指南\n\n## 支持的格式\n知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。导入严格限制为 .md 与 .txt，其它格式一律拒绝。仅支持导入 .md / .txt 文件，其它格式会被拒绝。\n\n## 检索与引用\n导入后即可通过 search_knowledge 工具检索，命中片段会标注来源标题。检索命中片段必须逐字引用，不得补充片段之外的任何内容。回答时需要严格以检索到的片段为准。如果知识库中没有相关内容，应如实说明未找到，禁止编造。"
+      }
+    ],
+    "retrievedExcerpts": [
+      "知识库支持导入 Markdown（.md）与纯文本（.txt）文件，按 Markdown 标题结构自动切块。"
+    ],
+    "answer": "在设置里找到音乐播放，打开本地音乐库开关即可。",
+    "groundTruth": {
+      "faithful": false,
+      "supportedClaims": [],
+      "unsupportedClaims": ["在设置里找到音乐播放", "打开本地音乐库开关即可"]
+    }
+  }
+]

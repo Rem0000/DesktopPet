@@ -4,11 +4,11 @@
 
 ## What Changes
 
-- **新增可选 cross-encoder Reranker**（`hybrid-retrieval`）：用 `@xenova/transformers` 的 `text-classification` 加载 `bge-reranker-base`（输入 `query [SEP] passage`，输出 sigmoid 分），在 RRF 融合候选后对候选集重排；最终排序在 rerank 生效时以 rerank 分为准。零新增 npm 依赖，模型走本地优先/远程兜底。
+- **新增可选 cross-encoder Reranker**（`hybrid-retrieval`）：用 `@xenova/transformers` 的 `AutoTokenizer + AutoModel` 加载 `bge-reranker-base`（输入 `query [SEP] passage`，取 logit 手动 sigmoid 得相关分），在 RRF 融合候选后对候选集重排；最终排序在 rerank 生效时以 rerank 分为准。零新增 npm 依赖，模型走本地优先/远程兜底。
 - **Rerank 容错**：reranker 模型不可用或单次调用失败时回退现有线性 Rerank 路径，检索不中断。
 - **过滤阈值可配置**（`local-rag`）：`KnowledgeStore` 的 `vectorScore >= 0.55` 后置过滤阈值改为构造参数（默认 0.55，行为不变），配合 rerank 可下调以恢复召回。
 - **评测 A/B harness**：`run.retrieval.kb.eval.test.ts` 对同一 64 条查询跑 `baseline / +reranker / +reranker+低阈值` 三组并打印 P@4/R@4/R@10/MRR@10/NDCG@10 对比。
-- **app 默认不开启**：`enableRerank` 默认 `false`，运行时行为不变；先经评测验证有效后再决定是否默认启用。
+- **app 默认不开启**：`enableRerank` 默认 `false`，运行时行为不变。评测已证全指标提升（MRR@10 0.820→0.880、NDCG@10 0.677→0.742），但实测延迟 ~1.3s/次检索（vs baseline ~46ms），在对话流里不可忽略，故 app 不默认启用；rerank 作为可选项（`KnowledgeStore` 构造参数）保留，延迟优化后再议。
 
 ## Capabilities
 
