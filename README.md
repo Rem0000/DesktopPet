@@ -81,15 +81,15 @@ huggingface-cli download Xenova/bge-small-zh-v1.5 --local-dir "D:\ProjectWork\De
 
 至少需要：`config.json`、tokenizer 文件，以及 `onnx/model_quantized.onnx`（或 `onnx/model.onnx`）。完成后重启应用，或在知识库面板点击「重试加载模型」。
 
-### 检索 IR 评测
+### 冻结语料检索评测
 
 ```bash
-npm run eval:retrieval       # 默认 mock Embedding（快，CI 友好）
-npm run eval:retrieval:real  # 使用真实 BGE（需 data/models 权重；耗时更长）
-# 也可：$env:EVAL_REAL_EMBEDDING='1'; npm run eval:retrieval
+npm run eval:retrieval:kb  # 真实 BGE；固定 4 份源文档、64 条查询与 88 个 source-evidence 锚点
 ```
 
-输出含 `mode: mock_embedding | real_embedding`。简历写指标时请注明模式；真测才反映完整 Hybrid 向量路质量。
+评测语料位于 `evals/retrieval/corpus/`，并由 SHA-256 校验防止静默漂移。金标是唯一出现的原文锚点，不是 `chunkId`：运行时用当前 `KnowledgeStore.importText()` 重新切分，只有单一 chunk 完整包含规范化锚点时才算映射。报告输出 Evidence Recall@10、Required Evidence Recall@10、Required Evidence MRR@10 和 `mappingSuccessRate`；未映射锚点保留在 Recall 分母且不能获得 MRR credit。
+
+因此可在**不修改数据集、冻结语料、模型、检索配置和 top-K**的前提下，先记录当前 chunker 基线，替换 chunker 后重跑同一命令并比较指标与 per-query 差异。需要本地 `data/models/bge-small-zh-v1.5/` 权重；模型加载失败不会降级为关键词检索。
 
 ## 打包（Windows）
 
@@ -112,7 +112,7 @@ npm run dist         # 产出 NSIS 安装包 + dir
 npm run dev        # 开发
 npm run typecheck  # 类型检查
 npm test           # 单元测试 + 功能 eval
-npm run eval:retrieval  # 检索 IR 评测（P@4/R@4/MRR@10，默认 mock）
+npm run eval:retrieval:kb  # 冻结 source-evidence 真实 BGE 检索评测（Recall@10 / MRR@10）
 npm run build      # 生产构建
 npm run pack       # Windows 可运行目录
 ```

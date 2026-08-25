@@ -191,6 +191,11 @@ export class KnowledgeStore {
     )
   }
 
+  listChunks(): KnowledgeChunk[] {
+    this.assertInitialized()
+    return structuredClone(this.index.chunks)
+  }
+
   async importFile(sourcePath: string): Promise<KnowledgeDocument> {
     this.assertInitialized()
     const ext = path.extname(sourcePath).toLowerCase()

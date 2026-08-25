@@ -16,10 +16,8 @@ npm run dev           # Vite dev server + Electron (main + preload built by vite
 npm run typecheck     # tsc for both tsconfig.json and tsconfig.node.json
 npm test              # vitest run (electron/, src/, evals/ *.test.ts)
 npm test -- <file>    # run a single test file (e.g. npm test -- electron/chat/agentRuntime.test.ts)
-npm run eval:retrieval       # retrieval IR eval (P@4/R@4/R@10/MRR@10/NDCG@10), mock embedding (fast)
-npm run eval:retrieval:real  # same eval with real BGE weights (needs data/models)
-npm run eval:retrieval:kb    # real-KB IR eval: loads data/knowledge 全库语料, real BGE 查询向量 (人工核心 + LLM 补量查询)
-npm run gen:queries          # 用 DeepSeek 从真实库 chunk 生成 LLM 补量查询 (需 DEEPSEEK_API_KEY)
+npm run eval:retrieval:kb    # 冻结 source-evidence 语料 + 真实 BGE，输出 Recall@10/MRR@10
+npm run eval:ann              # ANN 近似检索召回评测（与文档切分无关）
 npm run build         # tsc -p tsconfig.node.json --noEmit && vite build
 npm run pack          # build + electron-builder --dir → release/ (unpacked, for local verify)
 npm run dist          # build + electron-builder → NSIS installer + dir
@@ -54,7 +52,7 @@ IPC channels are namespaced `domain:action` (`live2d:*`, `chat:*`, `memory:*`, `
 
 `electron/retrieval/` implements hybrid search: BM25 (sparse) + BGE-Small-ZH-v1.5 embeddings (via `@xenova/transformers` + onnxruntime-node) fused with reciprocal rank fusion and a `alpha·sparse + beta·vector + gamma·metadataBoost` score. The same engine backs memory recall, knowledge RAG, and per-novel-book indexes.
 
-Embedding model weights must be at `data/models/bge-small-zh-v1.5/` (config.json + tokenizer + quantized onnx). **There is no keyword-only fallback** — if the model fails to load, retrieval errors rather than degrading. `npm run eval:retrieval:real` is the only eval that exercises the true vector path; the default uses mock embeddings.
+Embedding model weights must be at `data/models/bge-small-zh-v1.5/` (config.json + tokenizer + quantized onnx). **There is no keyword-only fallback** — if the model fails to load, retrieval errors rather than degrading. `npm run eval:retrieval:kb` exercises the real vector path against the tracked frozen source-evidence corpus; it is the sole document-relevance benchmark. `npm run eval:ann` separately measures ANN approximation.
 
 ### Novel writing studio
 
@@ -81,4 +79,4 @@ Cubism 2/4 runtime cores ship in `public/live2d/` (served via the custom `pet-as
 - **Behavioral requirements are enforced in prompt constraints.** Hard rules about what the model may claim (e.g. no fake memory-write success, remember-intent routing to persona vs `remember_fact`) are encoded as Chinese instructions in `agentRuntime.ts` and covered by eval scenarios in `evals/`.
 - **Secrets.** API keys are held only in the main process (`safeStorage` when possible), never round-tripped to the renderer or written to chat logs. Do not introduce VITE_-exposed env secrets.
 - **Packaging gotchas.** Native modules (`@xenova/transformers`, `onnxruntime-node`, `onnxruntime-common`, `sharp`) are marked `external` in the electron main build (`vite.config.ts`) and loaded from `node_modules` at runtime; they are `asarUnpack`ed in `electron-builder`. `sharp` is overridden to a local stub (`stubs/sharp`, plus `electron/retrieval/sharpStub.ts`) — it is not the real library. Don't add new `sharp`-style native deps without handling the same external/unpack/stub story.
-- **Tests.** Vitest in `node` env; colocate `*.test.ts` (and `*.test.tsx` for components) next to source. `electron/retrieval/testHelpers.ts` provides fixtures. The eval suite (`evals/run.eval.test.ts`, `evals/run.retrieval.eval.test.ts`, `evals/scenarios.json`) asserts agent/tool/memory/RAG behavior and currently passes 37/37.
+- **Tests.** Vitest in `node` env; colocate `*.test.ts` (and `*.test.tsx` for components) next to source. `electron/retrieval/testHelpers.ts` provides fixtures. The eval suite (`evals/run.eval.test.ts`, `evals/scenarios.json`) asserts agent/tool/memory/RAG behavior and currently passes 37/37.

@@ -245,7 +245,7 @@ query
 **面试可答 / Demo：**
 - 「导入一份项目说明，问细节；回答下方能看到引用片段与 headingPath，说明不是裸模型瞎编。」
 - 「为什么不用纯向量？BM25 补精确词，向量补语义；RRF 融合不需要标定训练数据，RRF + 线性 rerank 可解释、CPU 友好。」
-- 离线 IR 评测：`evals/retrieval/` 输出 P@4、R@4、MRR@10（`npm run eval:retrieval`）。
+- 可复现实验：`evals/retrieval/knowledge-evidence.v1.json` 冻结 4 份源文档（SHA-256 校验）、64 条查询与 source-evidence 锚点；运行时用当前 `KnowledgeStore` 重切分并严格映射，输出 Evidence Recall@10、Required Recall@10、Required MRR@10 和映射成功率，可无改标签对比 chunker A/B（`npm run eval:retrieval:kb`；真实 BGE）。
 
 ### 7. 评测与安全（P3 · 体现工程闭环）
 - ≥20 条本地场景：工具正确率、记忆一致性、RAG 命中。

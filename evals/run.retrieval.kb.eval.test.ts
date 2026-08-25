@@ -1,199 +1,100 @@
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { KnowledgeStore } from '../electron/chat/knowledgeStore'
 import { ensureEmbeddingModelLoaded } from '../electron/retrieval/embeddingService'
-import { ensureRerankerModelLoaded } from '../electron/retrieval/rerankerService'
 import {
-  mrrAtK,
-  ndcgAtK,
-  precisionAtK,
-  recallAtK,
-  relevantSet,
-} from './retrieval/metrics'
+  average,
+  createBenchmarkCorpus,
+  disposeBenchmarkCorpus,
+  loadEvidenceDataset,
+  mapEvidenceToChunks,
+  scoreEvidenceQuery,
+} from './retrieval/evidenceBenchmark'
 
 /**
- * 真实知识库检索 IR 评测：以 data/knowledge 全库（4 文档 / 292 chunk）为统一语料，
- * 跑 evals/retrieval/queries.real.json（人工核心）+ queries.llm.json（LLM 补量，如有）。
+ * Source-evidence retrieval benchmark.
  *
- * 语料向量是真实 BGE 生成的，查询向量也必须是真实 BGE，因此本评测固定 real embedding。
- * 仅通过 `npm run eval:retrieval:kb` 真正执行；普通 `npm test` 会命中但跳过，避免拖慢默认套件。
- *
- * A/B：同一 64 条查询跑 baseline（默认）/ +reranker / +reranker 低阈值 三组对比。
- * reranker 模型不可用（未下载/加载失败）时只跑 baseline、不 fail。
+ * Gold labels point to frozen source-text anchors, never a chunk ID. The current
+ * chunker is intentionally exercised through KnowledgeStore.importText(), so the
+ * same corpus and dataset can be run unchanged after a chunker replacement.
  */
 const root = path.dirname(fileURLToPath(import.meta.url))
-const kbDir = path.resolve(process.cwd(), 'data/knowledge')
-const corePath = path.join(root, 'retrieval', 'queries.real.json')
-const llmPath = path.join(root, 'retrieval', 'queries.llm.json')
+const datasetPath = path.join(root, 'retrieval', 'knowledge-evidence.v1.json')
+const isBenchmarkRun = process.env.npm_lifecycle_event === 'eval:retrieval:kb'
 
-const isKbRun = process.env.npm_lifecycle_event === 'eval:retrieval:kb'
+const round = (value: number) => Number(value.toFixed(6))
 
-type RealQuery = {
-  id: string
-  query: string
-  relevantChunkGraded: Record<string, number>
-}
-type RealDataset = {
-  documents: Record<string, string>
-  knowledge: RealQuery[]
-}
-
-/** 把 "mysql:1" 解析成真实 chunkId "uuid:1" */
-function resolveKey(key: string, documents: Record<string, string>): string {
-  const sep = key.lastIndexOf(':')
-  if (sep < 0) throw new Error(`chunk key 非法：${key}`)
-  const short = key.slice(0, sep)
-  const index = key.slice(sep + 1)
-  const uuid = documents[short]
-  if (!uuid) throw new Error(`未知文档别名：${short}`)
-  return `${uuid}:${index}`
-}
-
-const avg = (values: number[]) =>
-  values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
-
-type ConfigSummary = {
-  label: string
-  P_at_4: number
-  R_at_4: number
-  R_at_10: number
-  MRR_at_10: number
-  NDCG_at_10: number
-}
-
-async function runConfig(
-  label: string,
-  store: KnowledgeStore,
-  queries: RealQuery[],
-  documents: Record<string, string>,
-): Promise<ConfigSummary> {
-  const scores = {
-    p4: [] as number[],
-    r4: [] as number[],
-    r10: [] as number[],
-    mrr10: [] as number[],
-    ndcg10: [] as number[],
-  }
-  for (const q of queries) {
-    const grade = new Map<string, number>()
-    for (const [key, rel] of Object.entries(q.relevantChunkGraded)) {
-      grade.set(resolveKey(key, documents), rel)
-    }
-    const relevant = relevantSet(grade)
-    const hits = await store.search(q.query, 10)
-    const retrieved = hits.map((hit) => hit.chunkId)
-    scores.p4.push(precisionAtK(retrieved, relevant, 4))
-    scores.r4.push(recallAtK(retrieved, relevant, 4))
-    scores.r10.push(recallAtK(retrieved, relevant, 10))
-    scores.mrr10.push(mrrAtK(retrieved, relevant, 10))
-    scores.ndcg10.push(ndcgAtK(retrieved, grade, 10))
-  }
-  const summary: ConfigSummary = {
-    label,
-    P_at_4: avg(scores.p4),
-    R_at_4: avg(scores.r4),
-    R_at_10: avg(scores.r10),
-    MRR_at_10: avg(scores.mrr10),
-    NDCG_at_10: avg(scores.ndcg10),
-  }
-  console.log('[retrieval-kb-eval]', JSON.stringify(summary, null, 2))
-  return summary
-}
-
-describe('真实知识库检索 IR 评测（全库语料）', () => {
-  it('baseline / +reranker / +reranker 低阈值 三配置对比', async () => {
-    if (!isKbRun) {
-      console.log('[retrieval-kb-eval] 未通过 npm run eval:retrieval:kb 运行，跳过')
+describe('真实知识库 source-evidence 检索评测', () => {
+  it('对冻结语料输出独立于切分方式的 Recall@10 与 MRR@10', async () => {
+    if (!isBenchmarkRun) {
+      console.log('[retrieval-evidence-eval] 未通过 npm run eval:retrieval:kb 运行，跳过')
       return
     }
 
-    const core = JSON.parse(await readFile(corePath, 'utf8')) as RealDataset
-    let llmQueries: RealQuery[] = []
-    try {
-      const llm = JSON.parse(await readFile(llmPath, 'utf8')) as RealDataset
-      llmQueries = llm.knowledge ?? []
-    } catch {
-      // queries.llm.json 未生成则只跑人工核心
-    }
-    const queries = [...core.knowledge, ...llmQueries]
-
-    const store = new KnowledgeStore(kbDir)
-    await store.initialize()
-    const docs = store.listDocuments()
-    const docIds = new Set(docs.map((d) => d.id))
-    for (const [short, uuid] of Object.entries(core.documents)) {
-      expect(
-        docIds.has(uuid),
-        `知识库缺少文档 ${short}(${uuid})：请保持 data/knowledge 为构建评测集时的快照`,
-      ).toBe(true)
-    }
-    const idx = JSON.parse(
-      await readFile(path.join(kbDir, 'index.json'), 'utf8'),
-    ) as { chunks: Array<{ chunkId: string }> }
-
-    // 库内向量是真实 embedding，查询向量必须同源
+    const dataset = await loadEvidenceDataset(datasetPath)
     await ensureEmbeddingModelLoaded()
-
-    console.log(
-      '[retrieval-kb-eval]',
-      JSON.stringify(
-        {
-          mode: 'real_embedding',
-          corpus: { documents: docs.length, chunks: idx.chunks.length },
-          queries: { core: core.knowledge.length, llm: llmQueries.length, total: queries.length },
-        },
-        null,
-        2,
-      ),
-    )
-
-    const configs: ConfigSummary[] = []
-    configs.push(await runConfig('baseline（默认）', store, queries, core.documents))
-
-    let rerankerAvailable = true
+    const corpus = await createBenchmarkCorpus(dataset, path.dirname(datasetPath))
     try {
-      await ensureRerankerModelLoaded()
-    } catch (error) {
-      rerankerAvailable = false
-      console.log(
-        '[retrieval-kb-eval] reranker 模型不可用，跳过 rerank 配置对比（仅 baseline）：',
-        error,
-      )
+      const chunks = corpus.store.listChunks()
+      const mapping = mapEvidenceToChunks(dataset, chunks, corpus.documentIds)
+      const scores = []
+      for (const query of dataset.queries) {
+        const hits = await corpus.store.search(query.query, dataset.topK)
+        scores.push(scoreEvidenceQuery(query, hits, mapping, dataset.topK))
+      }
+
+      const evidence = dataset.queries.flatMap((query) => query.evidence)
+      const unmappedEvidence = evidence
+        .filter((item) => (mapping.get(item.evidenceId)?.size ?? 0) === 0)
+        .map((item) => ({
+          evidenceId: item.evidenceId,
+          document: item.document,
+          required: item.required,
+          anchor: item.anchor,
+        }))
+      const report = {
+        benchmark: 'knowledge-evidence.v1',
+        mode: 'real_embedding',
+        semantics: {
+          evidenceRecallAt10: 'top-10 覆盖的全部 evidence / 全部 evidence（含未映射项）',
+          requiredEvidenceRecallAt10: 'top-10 覆盖的 required evidence / 全部 required evidence（含未映射项）',
+          requiredEvidenceMrrAt10: '首条覆盖任一已映射 required evidence 的结果排名倒数；无命中或无映射为 0',
+          mapping: '单个当前 chunk 的规范化 content 必须完整包含 evidence anchor',
+        },
+        corpus: {
+          documents: dataset.corpus.map(({ alias, file, sha256 }) => ({ alias, file, sha256 })),
+          chunks: chunks.length,
+        },
+        queries: dataset.queries.length,
+        evidence: {
+          total: evidence.length,
+          required: evidence.filter((item) => item.required).length,
+          mapped: evidence.length - unmappedEvidence.length,
+          mappingSuccessRate: round((evidence.length - unmappedEvidence.length) / evidence.length),
+          unmapped: unmappedEvidence,
+        },
+        metrics: {
+          evidenceRecallAt10: round(average(scores.map((score) => score.evidenceRecall))),
+          requiredEvidenceRecallAt10: round(average(scores.map((score) => score.requiredEvidenceRecall))),
+          requiredEvidenceMrrAt10: round(average(scores.map((score) => score.requiredEvidenceMrr))),
+        },
+        perQuery: scores.map(
+          ({ evidenceRecall, requiredEvidenceRecall, requiredEvidenceMrr, ...score }) => ({
+            ...score,
+            evidenceRecallAt10: evidenceRecall,
+            requiredEvidenceRecallAt10: requiredEvidenceRecall,
+            requiredEvidenceMrrAt10: requiredEvidenceMrr,
+          }),
+        ),
+      }
+      console.log('[retrieval-evidence-eval]', JSON.stringify(report, null, 2))
+
+      expect(dataset.queries).toHaveLength(64)
+      expect(report.evidence.mappingSuccessRate).toBeGreaterThan(0.95)
+      expect(report.metrics.requiredEvidenceRecallAt10).toBeGreaterThan(0)
+      expect(report.metrics.requiredEvidenceMrrAt10).toBeGreaterThan(0)
+    } finally {
+      await disposeBenchmarkCorpus(corpus)
     }
-
-    if (rerankerAvailable) {
-      const rerankLow = new KnowledgeStore(kbDir, {
-        enableRerank: true,
-        vectorScoreThreshold: 0.2,
-        rerankTopK: 20,
-      })
-      await rerankLow.initialize()
-      configs.push(await runConfig('+reranker（阈值 0.2）', rerankLow, queries, core.documents))
-
-      const rerankMid = new KnowledgeStore(kbDir, {
-        enableRerank: true,
-        vectorScoreThreshold: 0.35,
-        rerankTopK: 20,
-      })
-      await rerankMid.initialize()
-      configs.push(await runConfig('+reranker 阈值 0.35', rerankMid, queries, core.documents))
-    }
-
-    console.log('[retrieval-kb-eval] 三配置对比（P@4 / R@4 / R@10 / MRR@10 / NDCG@10）')
-    for (const config of configs) {
-      console.log(
-        `[retrieval-kb-eval] ${config.label}: ` +
-          `P@4=${config.P_at_4.toFixed(3)} R@4=${config.R_at_4.toFixed(3)} ` +
-          `R@10=${config.R_at_10.toFixed(3)} MRR@10=${config.MRR_at_10.toFixed(3)} ` +
-          `NDCG@10=${config.NDCG_at_10.toFixed(3)}`,
-      )
-    }
-
-    const baseline = configs[0]!
-    expect(baseline.P_at_4).toBeGreaterThan(0)
-    expect(baseline.R_at_10).toBeGreaterThan(0)
-    expect(baseline.NDCG_at_10).toBeGreaterThan(0)
   }, 600_000)
 })

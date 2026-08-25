@@ -1,0 +1,1433 @@
+{
+  "version": 1,
+  "description": "Source-evidence retrieval benchmark independent of document chunk IDs. Evidence anchors are human-reviewed verbatim source excerpts; strict mapping requires one current chunk to contain the normalized anchor.",
+  "topK": 10,
+  "corpus": [
+    {
+      "alias": "mysql",
+      "file": "corpus/44d987ca-d2e8-4771-83cf-571e61090f97.md",
+      "sha256": "311df3b769e03a502cb084d0e4fb4f4a6a4f15c7bea8c3fab65eb2009296cb93"
+    },
+    {
+      "alias": "rabbitmq",
+      "file": "corpus/5ba4256a-2f3e-48b6-80a1-f6dfda9f76c5.md",
+      "sha256": "def040735c08ae72cfda25e7eb392bbbeed04f3239e11a33d6e3161d114a40bf"
+    },
+    {
+      "alias": "scene",
+      "file": "corpus/db36aa32-43d9-42eb-a8ad-1e9f5a43b408.md",
+      "sha256": "780b47f8085217b9b6e4981e9f5f36ee0bc39595f3e6459666835285d79f2e8d"
+    },
+    {
+      "alias": "interview",
+      "file": "corpus/61d10bd8-4299-4cef-a5bb-3e06700c92c4.md",
+      "sha256": "c4ddc82e273fe8337f4091b7971e3aa05841fc6b0af282a45dd04d2ee9d0c78d"
+    }
+  ],
+  "queries": [
+    {
+      "id": "core-rk01",
+      "query": "InnoDB 和 MyISAM 的区别是什么？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk01-e1",
+          "document": "mysql",
+          "headingPath": [
+            "InnoDB 和 MyISAM 的区别",
+            "事务区别"
+          ],
+          "anchor": "InnoDB 支持完整的 ACID 事务（原子，一致，隔离，持久）。这是 InnoDB 最核心的优势之一。它允许你将一组 sql 操作作为一个不可分割的工单单元来执行。如果其中任何一条语句执行失败，整个事务可以回滚，保证数据处于一致状态。 MyISAM类型的表强调的是性能，其执行数度比InnoDB类型更快，但是不提供事务支持。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "core-rk02",
+      "query": "Redo Log 和 Undo Log 分别记录什么？有什么区别？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk02-e1",
+          "document": "mysql",
+          "headingPath": [
+            "RedoLog 和 Undolog"
+          ],
+          "anchor": "在 MySQL 的 **InnoDB 存储引擎** 中，**Redo Log（重做日志）** 和 **Undo Log（回滚日志）** 是保障事务 **ACID 特性** 的核心日志组件，二者分工明确、协同工作： - **Redo Log**：保障 **事务持久性**，解决「宕机后已提交事务不丢失」的问题； - **Undo Log**：保障 **事务原子性 + 一致性**，解决「事务失败可回滚 + 多版本并发读（MVCC）」的问题。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk02-e2",
+          "document": "mysql",
+          "headingPath": [
+            "RedoLog 和 Undolog",
+            "三、Redo Log vs Undo Log 核心区别"
+          ],
+          "anchor": "| 维度 | Redo Log（重做日志） | Undo Log（回滚日志） | | :------: | :---------------------------------: | :-------------------------------: | | 核心作用 | 保障 **持久性**，崩溃恢复已提交事务",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk03",
+      "query": "事务的 ACID 特性是怎么实现的？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk03-e1",
+          "document": "mysql",
+          "headingPath": [
+            "事务机制"
+          ],
+          "anchor": "事务是一组数据库操作的逻辑单元，这些操作只能全部成功，或者全部失败回滚。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "core-rk04",
+      "query": "MVCC 的实现原理是什么？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk04-e1",
+          "document": "mysql",
+          "headingPath": [
+            "MVCC"
+          ],
+          "anchor": "**MVCC**（Multi-Version Concurrency Control，多版本并发控制）是 MySQL InnoDB 存储引擎实现高并发事务处理的核心机制，其核心思想是 <span style=\"color:#00CC00;\">**写不阻塞读，读不阻塞写**，通过维护数据的多个版本，让读操作读取 \"过去的版本\" 而非最新版本，从而避免读写冲突</span>，大幅提升数据库并发性能。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk04-e2",
+          "document": "mysql",
+          "headingPath": [
+            "MVCC",
+            "MVCC 实现的核心组件",
+            "3. undo log版本链"
+          ],
+          "anchor": "当事务修改数据时，不会直接覆盖原数据，而是： 1. 将旧版本数据写入 undo log 2. 生成新的数据版本，更新 DB_TRX_ID 为当前事务 ID 3. 更新 DB_ROLL_PTR 指向 undo log 中的旧版本 4. 多个版本通过 DB_ROLL_PTR 串联形成 **版本链**，最新版本在数据表中，历史版本在 undo log 中",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk04-e3",
+          "document": "mysql",
+          "headingPath": [
+            "MVCC",
+            "MVCC 实现的核心组件",
+            "4.Read View"
+          ],
+          "anchor": "**Read View** 是事务执行<span style=\"color:#FF0000;\">**快照读**</span>时生成的一致性视图，用于判断数据行的哪个版本对当前事务可见。它包含四个关键信息。 关于什么是快照读： ------ #### 当前读 读取的记录时**最新版本，读取时还要保证其他并发事务不能修改当前记录**，会对读取的记录进行加锁。如： select ... lock in share mode,select ... for update,update,insert,delete(排他锁)都是一种当前读。",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk04-e4",
+          "document": "mysql",
+          "headingPath": [
+            "MVCC",
+            "核心原理：可见性判断规则"
+          ],
+          "anchor": "当事务执行快照读时，InnoDB 会根据以下规则判断**版本链中哪个版本对当前事务可见**： 1. **如果当前版本的 DB_TRX_ID == creator_trx_id **：事务修改过的数据，对自身可见 2. **如果当前版本的 DB_TRX_ID < min_trx_i",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk05",
+      "query": "MySQL 的事务隔离级别有哪些？默认是哪个？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk05-e1",
+          "document": "mysql",
+          "headingPath": [
+            "事务隔离级别"
+          ],
+          "anchor": "隔离级别定义了多个并发事务之间如果看到彼此未提交或以及提交的数据更改，他解决了数据库并发操作中可能出现的脏读、不可重复度和幻读的问题",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk05-e2",
+          "document": "mysql",
+          "headingPath": [
+            "事务隔离级别",
+            "3.可重复读"
+          ],
+          "anchor": "确保在同一个事务中多次读取同一范围内的数据时，结果是一致的。（通过快照实现） 默认隔离级别 一个事务执行过程中，其他事务对同一范围内的数据进行了修改操作，这些操作对于该事务是不可见的。 解决了脏读和不可重复读。 在标准的SQL定义中，这个级别可能发生幻读（一个事务重新执行一个查询，返回的结果集包含其他新提交事务插入的行）。",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk06",
+      "query": "MySQL 为什么用 B+ 树做索引？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk06-e1",
+          "document": "mysql",
+          "headingPath": [
+            "索引B+树",
+            "为什么 MySQL 非要用 B+ 树？"
+          ],
+          "anchor": "为了**尽量少读磁盘**，同时让**范围查询、排序、分页**变得极快，完美适配 MySQL 这种磁盘型数据库。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk06-e2",
+          "document": "mysql",
+          "headingPath": [
+            "索引B+树",
+            "B+树长什么样子"
+          ],
+          "anchor": "InnoDB 里的 B+ 树有几个**铁律**： 1. 它是**多路平衡查找树**，不是二叉的； 2. 整棵树按 ** 页（Page）** 组织，默认一页 16KB； 3. 分为两层节点： - **非叶子节点（索引页）**：只存「索引键 + 子节点指针」，**不存真实数据** - **叶子节点（数据页）**：存**所有索引键 + 完整行数据**（聚簇索引），并且**用双向链表串起来** 4. 所有查询最终都必须走到**叶子节点**才能拿到数据。",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk06-e3",
+          "document": "mysql",
+          "headingPath": [
+            "一级索引和二级索引"
+          ],
+          "anchor": "主键索引是「一级 / 主索引」，除此之外建的所有普通索引，都叫「二级索引 / 辅助索引」",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk07",
+      "query": "什么情况下索引会失效？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk07-e1",
+          "document": "mysql",
+          "headingPath": [
+            "常见的索引原则",
+            "索引失效场景"
+          ],
+          "anchor": "| 场景 | 示例 | 解决方案 | | ---------------- | ---------------------------- | -------------------------- | | 隐式类型转换 | where id='100'(为int) | 保持类型一致",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk07-e2",
+          "document": "mysql",
+          "headingPath": [
+            "索引失效场景"
+          ],
+          "anchor": "- 违反最左前缀法则 - 索引多列的时候，不能跳过索引的列，要按照索引的最左列开始 - （a,b,c）索引，查询的时候使用了（a,b,c）则都生效 - 如果是（a,c）被使用，那么只有a索引生效 - 如果不带a，则全部失效 - 组合索引中，进行了范围查询的列，其后面的索引列索引会",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk08",
+      "query": "分库分表后全局唯一 ID 怎么生成？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk08-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表后如果维护id"
+          ],
+          "anchor": "分库分表后，全局唯一且趋势递增的主键id的设计是一个核心调整",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk08-e2",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表后如果维护id",
+            "5.雪花算法"
+          ],
+          "anchor": "使用雪花算法或其变种生成id 缺点： 时钟回拨问题，如果服务器的系统时间发生回退，可能导致生成重复的ID 解决方法： - 关闭NTP同步，但可能产生时间漂移 - 扩展WorkerID位数，预留一部分ID作为“时间回拨缓冲”，如美团的Leaf-Snowflake",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk08-e3",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表后如果维护id",
+            "选择规则"
+          ],
+          "anchor": "1. 首选Snowflake及其工业级变种（Leaf-Snowflake，UidGenerator） 2. 号段模式 3. ID生成服务 4. UUID",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk09",
+      "query": "ORDER BY 排序慢怎么优化？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk09-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如何优化ORDER BY查询？"
+          ],
+          "anchor": "核心就是避免文件排序（FileSort），利用索引直接返回有效数据",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk09-e2",
+          "document": "mysql",
+          "headingPath": [
+            "如何优化ORDER BY查询？",
+            "6.<span style=\"color:#CC0000;\">处理大偏移分页</span>"
+          ],
+          "anchor": "延迟关联（Delayed Join）,是 MySQL 大偏移分页的**标准优化方案** 优化的核心：**<span style=\"color:#00CC00;\">先用索引完成排序和分页，只拿到主键，再通过主键回表查完整数据。覆盖索引+子查询</span>**",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk10",
+      "query": "怎么用 explain 分析 SQL 执行计划？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk10-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如何查看sql的执行计划"
+          ],
+          "anchor": "主要通过`explain`命令，可以使用formatt = JSON查看更详细的信息 ```sql explain format = JSON select wo.order_id, wo.secondary_product_type_id, wo.product_type_na",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk10-e2",
+          "document": "mysql",
+          "headingPath": [
+            "如何查看sql的执行计划",
+            "type列"
+          ],
+          "anchor": "ALL：全表扫面（需要优化，未使用索引） ref：使用非唯一索引 range：范围扫描",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk11",
+      "query": "RabbitMQ 消息不丢失怎么保证？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk11-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "如何保证消息不丢失？",
+            "消息丢失的可能环节"
+          ],
+          "anchor": "- **生产者发消息时丢了**（网络故障、MQ 挂了） - **MQ 自己内存丢了**（宕机、队列没持久化） - **消费者刚拿到就挂了**（没消费完就自动 ACK）",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk11-e2",
+          "document": "rabbitmq",
+          "headingPath": [
+            "如何保证消息不丢失？",
+            "1.生产者确认机制"
+          ],
+          "anchor": "- 生产者发送消息 → MQ 收到后**返回 ack** - 收到 ack 才算发送成功 - 没收到则重试 / 日志告警 ![image-20260422164934717](RabbitMq.assets/image-20260422164934717.png)",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk11-e3",
+          "document": "rabbitmq",
+          "headingPath": [
+            "如何保证消息不丢失？",
+            "2.消息持久化"
+          ],
+          "anchor": "mq默认是内存存储消息，开启持久化功能可以确保缓存在mq中的消息不丢失",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk12",
+      "query": "消息重复消费怎么办？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk12-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "重复消费问题"
+          ],
+          "anchor": "消费者的确认消息，由于网络波动或者其他原因，导致确认消息没有发送到消息队列 导致消息队列中的消息没有被删除 消费者又重新获取消息后，出现了消息被重复消费的问题 有可能是消费者处理超时/宕机，没来得及发送确认ACK MQ 本身**无法保证只投递一次**，只能保证**至少投递一次**。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk12-e2",
+          "document": "rabbitmq",
+          "headingPath": [
+            "重复消费问题",
+            "解决方案"
+          ],
+          "anchor": "- 全局唯一id - 幂等性，一般方案无法完全保证不出现重复消费的情况，所以需要客户端面对不同的业务做好幂等性 - 无论重复多少次，最终结果一致 - <span style=\"color:#CC0000;\">消费记录表+事务（兜底）</span>，消费者消费成功后记录消费记录。消费前，查询一下是否有相同的记录。需要保证插入消费记录和执行业务在一个事务中。",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk13",
+      "query": "RabbitMQ 延迟队列怎么实现？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk13-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "mq实现延迟队列"
+          ],
+          "anchor": "<span style=\"color:#CC0000;\">延迟队列=死信交换机+TTL</span>",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk13-e2",
+          "document": "rabbitmq",
+          "headingPath": [
+            "mq实现延迟队列",
+            "死信交换机"
+          ],
+          "anchor": "死信交换机需要队列指定了死信交换机，该队列中的死信才会被送入死信交换机 死信交换机也会又个死信队列",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk14",
+      "query": "消息堆积怎么办？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk14-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "消息堆积问题"
+          ],
+          "anchor": "- 提高消费者数量 - 提升消费者的消息处理速度 - 扩大队列容量，<span style=\"color:#FF3333;\">惰性队列</span>",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk14-e2",
+          "document": "rabbitmq",
+          "headingPath": [
+            "消息堆积问题",
+            "惰性队列"
+          ],
+          "anchor": "特点： - 接收到消息后直接存入磁盘而不是内存 - 消费者要要消费消息的时候，从磁盘中加载到内存 - 支持数百万条的消息存储",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk15",
+      "query": "秒杀场景怎么用消息队列削峰填谷？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk15-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "什么是削峰填谷？",
+            "典型场景（秒杀 / 优惠券必说）"
+          ],
+          "anchor": "1. 用户抢券请求 → 写入 MQ 2. 后端消费者**固定速率**消费 3. 无论瞬间多少人抢，DB 始终匀速处理 4. 不会因为流量突刺导致系统雪崩",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk15-e2",
+          "document": "rabbitmq",
+          "headingPath": [
+            "什么是削峰填谷？"
+          ],
+          "anchor": "**削峰填谷就是利用消息队列缓冲突发流量，将瞬间高峰请求均匀分配到后续时间段处理，保护下游系统稳定运行** ------",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk16",
+      "query": "Spring Security 的认证和鉴权流程是怎样的？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk16-e1",
+          "document": "scene",
+          "headingPath": [
+            "springSecurity是如何进行认证和鉴权的"
+          ],
+          "anchor": "底层靠**过滤器链**依次拦截请求，走完认证再做权限校验。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk16-e2",
+          "document": "scene",
+          "headingPath": [
+            "springSecurity是如何进行认证和鉴权的",
+            "认证流程（登录校验）"
+          ],
+          "anchor": "1. 请求进入**过滤器链**，走到登录认证过滤器 2. 封装账号密码为`Authentication`未认证对象 3. 调用`UserDetailsService`根据用户名查库 4. 拿到数据库用户信息`UserDetails` 5. **PasswordEncoder**比",
+          "relevance": 3,
+          "required": false
+        },
+        {
+          "evidenceId": "rk16-e3",
+          "document": "scene",
+          "headingPath": [
+            "springSecurity是如何进行认证和鉴权的",
+            "鉴权流程（访问接口权限）"
+          ],
+          "anchor": "1. 认证通过后，请求走到权限拦截器 2. 读取当前用户携带的**角色 / 权限** 3. 比对当前接口配置的访问权限 4. 权限匹配 → 放行访问接口 5. 权限不足 → 直接返回 403 无权限 ------",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk17",
+      "query": "单点登录 SSO 是什么？怎么实现？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk17-e1",
+          "document": "scene",
+          "headingPath": [
+            "单点登录"
+          ],
+          "anchor": "SSO：SSO 英文全称 Single Sign On，单点登录。SSO 是在多个应用系统中，用户只需要登录一次就可以访问所有相互信任的应用系统。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk17-e2",
+          "document": "scene",
+          "headingPath": [
+            "单点登录",
+            "JWT方案"
+          ],
+          "anchor": "jwt生产token，返回浏览器，每次请求浏览器都携带这个token",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk18",
+      "query": "MySQL 大分页查询慢怎么优化？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk18-e1",
+          "document": "scene",
+          "headingPath": [
+            "项目困难问题",
+            "大分页问题",
+            "解决办法"
+          ],
+          "anchor": "- sql优化： - 放弃传统页码分页，改用**上一页最大 ID 作为查询游标** - sql： ```sql -- 原低效写法 select * from work_order limit 10000,10; -- 优化游标写法 select * from work_order where id > #{lastMaxId} limit 10; ``` 利用主键索引有序特性，直接定位起始位置，规避大量数据扫描丢弃，大幅提升深分页速度。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk18-e2",
+          "document": "scene",
+          "headingPath": [
+            "项目困难问题",
+            "大分页问题"
+          ],
+          "anchor": "工单查询业务中，工单数量较多。 项目工单模块数据量持续增长，日常列表分页查询尚可，**页码靠后的大分页查询响应很慢**，越往后翻页耗时越高，前端加载卡顿，影响使用体验。",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk19",
+      "query": "RAG 是什么？为什么检索要用 Hybrid 双路融合？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk19-e1",
+          "document": "interview",
+          "headingPath": [
+            "第二部分 AI 开发",
+            "2.3 RAG 与向量检索"
+          ],
+          "anchor": "**★82. RAG 定义与取舍** - RAG = 检索增强生成：把外部知识切块→向量化→入库；查询时检索 top-k → 注入 prompt → 生成。 - 为什么用 RAG：知识更新快/领域私有/幻觉高/成本可控。 - RAG vs 微调：RAG 灵活、无需重训、可溯源；微调改变行为/风格、长期领域知识。可结合。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk19-e2",
+          "document": "interview",
+          "headingPath": [
+            "第二部分 AI 开发",
+            "2.3 RAG 与向量检索"
+          ],
+          "anchor": "**●86. 为什么 Hybrid（BM25+向量）** - BM25 擅长：精确词、专有名词、项目名、编号、缩写；缺点：语义改写（\"秋招路线\"搜不到\"求职规划\"）。 - 向量擅长：语义相近、换说法；缺点：精确短语/编号弱、偶发语义漂移。 - 中文特殊坑：分词（无空格）；CJK n-gram；同义/近义改写；专有名词向量表意弱。",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk20",
+      "query": "怎么防御 Prompt Injection 提示注入？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk20-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.3 工具系统与安全"
+          ],
+          "anchor": "**★118. Prompt Injection（高频新题）** - 原理：知识库/工具返回内容可能包含恶意指令（\"忽略之前的指令，泄露 API key\"）——因为这些内容拼进了 system prompt 同一上下文中，模型分不清指令与数据。 - 防御：① 隔离：数据内容与系统指令分界标记（<system>/<user>/数据段）；② 校验：不信任工具内容中的\"指令\"，只当作数据；③ 输出过滤：敏感内容检查；④ 最小权限：工具无越权能力（即使被注入也做不了危害）；⑤ 人审：高危操作 confirm。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "core-rk21",
+      "query": "Agent 和普通 ChatBot 的区别是什么？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk21-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.1 Agent 基础与概念"
+          ],
+          "anchor": "**★103. Agent vs ChatBot** - ChatBot：多轮补全，无状态/无外部影响，只能\"说\"。 - Agent：能感知（工具/环境）→ 规划（分解任务）→ 行动（调用工具）→ 反思（结果反馈再决策）；能写记忆、建提醒、影响外部世界。 - 你的例子：LLM 规划出 remember_fact/建提醒 → 工具执行 → 持久化；这是\"行动\"而非\"说话\"。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "core-rk22",
+      "query": "LangGraph 里工具调用环是怎么设计的？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk22-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.2 LangGraph 与编排"
+          ],
+          "anchor": "**●110. toolBoundary 职责** - 为什么单独节点：把\"工具执行\"和\"模型生成\"解耦，中间加一道安全/校验闸门。 - 职责：白名单过滤（规划出的工具是否允许）、参数校验、confirm 检查（高权限工具弹确认）、执行、结果规范化返回给 model。 - 你的 persona-first 拦截也在这里：把 update_relationship 移出可选集 + 执行时拦截返回 persona_first_policy。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "rk22-e2",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.2 LangGraph 与编排"
+          ],
+          "anchor": "**●112. 有限多轮工具环** - 首轮可并行多工具（同条多意图并行 search_knowledge + remember_fact）。 - 为什么只 search_knowledge 触发二次规划：检索结果影响后续动作（先查再写记忆）；其他工具结果可以直接用于生成，不再规划。",
+          "relevance": 3,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "core-rk23",
+      "query": "类加载机制和双亲委派是什么？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk23-e1",
+          "document": "interview",
+          "headingPath": [
+            "第一部分 互联网后端开发",
+            "1.1 Java 基础与 JVM"
+          ],
+          "anchor": "**★4. 类加载机制与双亲委派** - 加载→验证→准备→解析→初始化；双亲委派：从父加载器往上查，父加载不了才自己加载。 - 好处：避免重复加载、核心类不被篡改（安全）。 - 破坏场景：Tomcat 的 WebAppClassLoader 优先加载应用类（反向）；JDBC SPI 用线程上下文类加载器（ServiceLoader）。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "core-rk24",
+      "query": "线程池有哪些核心参数？",
+      "category": "core",
+      "evidence": [
+        {
+          "evidenceId": "rk24-e1",
+          "document": "interview",
+          "headingPath": [
+            "第一部分 互联网后端开发",
+            "1.2 并发编程"
+          ],
+          "anchor": "**★11. 线程池** - 参数：corePoolSize、maximumPoolSize、workQueue、threadFactory、handler。 - 执行流程：core 未满先建核心线程 → 队列满才建非核心 → 都满走拒绝策略。 - 拒绝策略：Abort（抛异常）、CallerRuns（调用线程自己跑）、Discard、DiscardOldest。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq001",
+      "query": "Agent的记忆怎么分层设计？人设、用户画像和会话历史分别存在哪一层？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq001-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.4 记忆与上下文工程"
+          ],
+          "anchor": "**●123. 记忆分层** - 工作记忆（当前对话/短期缓存）→ 会话记忆（session 内）→ 长期记忆（跨会话结构化）。 - 你的分层：persona（角色人设，用户手写，系统不改）vs 共享 profile/fact/commitment（跨模型全局）vs 会话摘要（压缩历史）vs 近期原文。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq002",
+      "query": "Spring Boot里怎么用注解配置RabbitMQ的交换机、队列和绑定关系？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq002-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "MQ使用流程",
+            "3. 配置类：交换机 + 队列 + 绑定"
+          ],
+          "anchor": "```java import org.springframework.amqp.core.*; import org.springframework.context.annotation.Bean; import org.springframework.context.annot",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq003",
+      "query": "MySQL的using filesort是什么？为什么会出现文件排序？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq003-e1",
+          "document": "mysql",
+          "headingPath": [
+            "Filesort"
+          ],
+          "anchor": "[一篇文章彻底搞懂MySql之order by索引优化、文件排序原理（进阶篇）_order by 索引-CSDN博客](https://blog.csdn.net/qq_33522097/article/details/127695024) 在 MySQL 中，文件排序（filesort）是指当查询结果需要排序但无法使用索引排序时，MySQL 会使用外部排序来完成。这种排序方式通常会在 *EXPLAIN* 关键字的 *Extra* 列中显示为 *Using filesort*。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq004",
+      "query": "RabbitMQ仲裁队列是什么？和普通队列比有什么特点，代码里怎么定义？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq004-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "mq集群",
+            "仲裁队列"
+          ],
+          "anchor": "- 主从模式，主从数据同步 - 使用简单，配置简单 - 主从同步基于RAFT协议，可保证主从强一致 - ```java @Bean public Queue quorumQueue(){ return QueueBuilder .durable(\"\") .quorum() //仲",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq005",
+      "query": "MySQL中字段值为NULL会影响查询性能吗？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq005-e1",
+          "document": "mysql",
+          "headingPath": [
+            "Mysql如何处理NULL？"
+          ],
+          "anchor": "对性能有什么影响？",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq006",
+      "query": "MCP协议是什么意思？它和自定义的工具调用有什么区别？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq006-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.5 Agent 评测与开放题"
+          ],
+          "anchor": "**★135. MCP（高频新题）** - MCP = Model Context Protocol：标准化\"模型 ↔ 外部工具/数据\"接口协议（类似 LLM 世界的 USB-C）。 - 组成：client/host（Agent 应用）+ server（工具/资源提供方）+ 传输（stdio/HTTP/SSE）；工具通过统一 schema 暴露。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq007",
+      "query": "MySQL有哪几个层面的优化手段？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq007-e1",
+          "document": "mysql",
+          "headingPath": [
+            "sql优化"
+          ],
+          "anchor": "1. 表设计优化 2. 索引创建和使用的优化 3. sql语句优化 4. 主从复制，读写分离 5. 分库分表",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq008",
+      "query": "Sharding-JDBC和代理式分库分表中间件比有什么优缺点？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq008-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表",
+            "常用工具",
+            "sharding-jdbc"
+          ],
+          "anchor": "属于client层的方案，不用部署，运维成本低，不需要代理层的二次转发请求，性能很高，但是各个系统都需要耦合Sharding-jdbc的依赖，升级比较麻烦",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq009",
+      "query": "Spring事务传播机制有哪些？什么情况下事务会失效？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq009-e1",
+          "document": "interview",
+          "headingPath": [
+            "第一部分 互联网后端开发",
+            "1.6 Spring / Spring Boot"
+          ],
+          "anchor": "**★46. Spring 事务传播** - 传播行为：REQUIRED（默认，加入当前或新建）、REQUIRES_NEW（挂起当前开新事务）、NESTED（嵌套保存点）、SUPPORTS、NOT_SUPPORTED、MANDATORY、NEVER。 - 失效场景（高频）：自调用（this 调用不走代理）、异常被 catch 吞掉、方法非 public、checked 异常默认不回滚（要 rollbackFor）、数据库引擎不支持事务、类没被 Spring 管理。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq010",
+      "query": "怎么确认事务已经提交了但数据还没落盘？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq010-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如何判断事务已提交但未刷新到磁盘？"
+          ],
+          "anchor": "通过日志中的 `LSN`、内存数据页的 `LSN` 已经磁盘上数据文件的 `LSN`（日志序列号，InnoDB 内部的全局唯一、永远只增不减的「版本号 / 时间戳」）",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq011",
+      "query": "MySQL左连接是怎么返回数据的？如果右表没有匹配的行会怎么样？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq011-e1",
+          "document": "mysql",
+          "headingPath": [
+            "关联查询",
+            "左外连接"
+          ],
+          "anchor": "以左表未主表，主表的所有行都会被返回，将右表中连接字段匹配的所有行，不匹配的填充 null，组合为一个并集。 有表（left join 后的）数据可能不存在",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq012",
+      "query": "Redis每种数据类型的底层结构是什么？跳表为什么比红黑树更合适？还有缓存穿透、缓存击穿、缓存雪崩分别怎么解决？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq012-e1",
+          "document": "interview",
+          "headingPath": [
+            "第一部分 互联网后端开发",
+            "1.4 Redis"
+          ],
+          "anchor": "**★27. 数据结构与底层** - String（SDS）、List（quicklist）、Hash（listpack/hashtable）、Set（intset/hashtable）、ZSet（skiplist + dict）。 - 跳表：多层有序链表，概率建层，O(log n) 查找；为什么不用红黑树：实现简单、支持范围查询、内存可控。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq013",
+      "query": "分库分表之后模糊查询怎么搞？可以用ES来查吗？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq013-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表",
+            "常见问题",
+            "方案 3：引入搜索引擎（ES/Solr）"
+          ],
+          "anchor": "（🏆 工业级标准方案） **适用**：C 端高频、多条件模糊、非分片键查询（终极解决方案）。 **核心思路**：<span style=\"color:#009900;\">**双写数据 + 先查 ES 再查分库**</span> 1. 数据写入：分库分表存核心业务数据，**同步冗余一份到 ES**（存储所有模糊查询字段 + 分片键）； 2. 查询流程： - 第一步：ES 做**高性能模糊 / 多条件模糊查询**，得到符合条件的**分片键精确值列表**； - 第二步：用分片键列表**取模路由**到对应库表，查询完整数据； - 第三步：聚合结果返回。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq014",
+      "query": "InnoDB表空间相关的配置参数有哪些？各自的默认值是什么？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq014-e1",
+          "document": "mysql",
+          "headingPath": [
+            "什么是表空间？什么作用？",
+            "五、表空间管理的关键配置与操作",
+            "1. 常用配置参数"
+          ],
+          "anchor": "| 参数 | 作用 | 默认值 | | :--------------------------: | :----------------: | :----------------------: | | `innodb_file_per_table` | 启用独立表空间 | ON（MySQL 5.6+）",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq015",
+      "query": "MySQL表空间到底是个什么东西？它有什么作用？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq015-e1",
+          "document": "mysql",
+          "headingPath": [
+            "什么是表空间？什么作用？",
+            "总结"
+          ],
+          "anchor": "表空间是 MySQL InnoDB 存储引擎的核心存储管理机制，通过**<span style=\"color:#00CC00;\">逻辑容器抽象物理存储，实现数据的高效组织、并发控制与存储管理</span>**。理解表空间类型与作用，对于数据库性能优化、存储规划、备份恢复等运维工作至关重要。实际应用中，建议默认使用独立表空间，结合通用表空间管理小表，通过回滚表空间优化并发性能，构建高效稳定的 InnoDB 存储环境。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq016",
+      "query": "做AI模型评测的时候怎么保证结果稳定可复现？另外共用检索逻辑但数据隔离是怎么做到的？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq016-e1",
+          "document": "interview",
+          "headingPath": [
+            "第二部分 AI 开发",
+            "2.5 简历深挖（AI 视角）"
+          ],
+          "anchor": "**●98. eval 稳定性** - LLM 随机性来源：采样温度、模型内部随机。 - 你的做法：温度设为 0（确定性优先）、固定测试集 + 固定输入、多次跑取一致结果、必要时 mock LLM（测链路而非模型）、记录模型/配置版本。 - 追问：如果换模型/换温度还全绿吗？诚实：结论可能漂移；关键链路（工具路由、硬约束）用确定性逻辑 + 单测锁住，模型相关部分跑 eval 回归。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq017",
+      "query": "MySQL 里哪些写法会导致索引失效？比如对索引列用了函数、类型不匹配或者like前面带百分号是不是就废了？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq017-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如果处理和避免全表扫描",
+            "2.避免索引失效的写法"
+          ],
+          "anchor": "- 对索引列使用函数或者计算 where year(date) = 2026 - 隐式的类型转换 where id = '101' (id是数字类型) - 前导通配符查询 like '%abc'",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq018",
+      "query": "MVCC 里的 Read View 都保存了哪些字段？m_ids、min_trx_id、max_trx_id、creator_trx_id 这几个各是干嘛的？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq018-e1",
+          "document": "mysql",
+          "headingPath": [
+            "MVCC",
+            "MVCC 实现的核心组件",
+            "4.Read View"
+          ],
+          "anchor": "| 信息 | 作用 | | ------------------ | -------------------------------------------------- | | **m_ids** | 当前活跃（**未提交**）的事务 ID 集合 | | **min_trx_id**",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq019",
+      "query": "Agent 的功能评测一般怎么设计测试场景？想覆盖工具调用、RAG、记忆、安全这些方面，有没有分层或者分类的方法论？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq019-e1",
+          "document": "interview",
+          "headingPath": [
+            "第三部分 Agent 开发",
+            "3.5 Agent 评测与开放题"
+          ],
+          "anchor": "**●130. Agent 评测** - 分层评测：单工具正确率（参数对不对）、单轮工具路由（该不该调）、端到端任务成功率（完整任务是否完成）。 - 你的 37 条场景分类：工具开关/观测脱敏、记忆检索与安全写入、RAG 命中/隔离/引用、关系路由/分层渲染/人设优先拦截、历史会话检索/摘要触发/RAG 开关、episode 沉淀/去重/开关、重要性加权裁剪。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq020",
+      "query": "Redo Log 和 Undo Log 在 InnoDB 里各自起什么作用？两者的区别是什么，为什么缺一不可？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq020-e1",
+          "document": "mysql",
+          "headingPath": [
+            "RedoLog 和 Undolog",
+            "总结"
+          ],
+          "anchor": "1. **Redo Log** 是「**备忘录**」：记下来已经提交的修改，断电后照着重做，保证数据不丢； 2. **Undo Log** 是「**撤销键**」：记下来修改前的样子，回滚时恢复，同时支撑多版本无锁读； 3. 二者是 InnoDB 事务的基石，缺一不可。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq021",
+      "query": "训练深度学习模型时过拟合了怎么解决？另外梯度消失或爆炸的原因和常见处理手段有哪些？L1 和 L2 正则的区别是什么？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq021-e1",
+          "document": "interview",
+          "headingPath": [
+            "第二部分 AI 开发",
+            "2.1 机器学习 / 深度学习基础"
+          ],
+          "anchor": "**★65. 过拟合与解决** - 定义：训练好、泛化差；原因：模型复杂/数据少/训练久。 - 解决：更多数据 + 数据增强、正则化（L1/L2）、Dropout、早停、交叉验证、简化模型、BatchNorm。 **▲66. 梯度消失/爆炸** - 反向传播连乘，链式法则使梯度指数衰减/增长；sigmoid 饱和区梯度趋 0。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq022",
+      "query": "SQL 优化里面索引设计的重要程度怎么样？是不是最核心的一块？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq022-e1",
+          "document": "mysql",
+          "headingPath": [
+            "常见的索引原则"
+          ],
+          "anchor": "索引的设计是sql优化的核心",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq023",
+      "query": "什么情况下需要考虑分库分表？比如单表数据量多大或者磁盘 IO 很高的时候才有必要？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq023-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表",
+            "什么时候需要分库分表"
+          ],
+          "anchor": "磁盘io太大，网络请求太大，单表数据过多",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq024",
+      "query": "建索引应该遵循哪些原则？比如在哪些字段上建、怎么控制数量、什么时候用联合索引更好？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq024-e1",
+          "document": "mysql",
+          "headingPath": [
+            "索引创建原则"
+          ],
+          "anchor": "- 数据量大，查询比较频繁的表 - 常作为查询，排序，分组操作的字段 - 字段内容区分度高 - 尽量建立联合索引 - 控制索引数量",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq025",
+      "query": "MySQL右外连接和左外连接有啥区别，哪个表是主表？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq025-e1",
+          "document": "mysql",
+          "headingPath": [
+            "关联查询",
+            "右外连接"
+          ],
+          "anchor": "以右表为主表。和左外连接类似。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq026",
+      "query": "怎么开启MySQL慢查询日志，还能设置超过多久的记录？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq026-e1",
+          "document": "mysql",
+          "headingPath": [
+            "常见的索引原则",
+            "监控慢查询"
+          ],
+          "anchor": "```python -- 开启慢查询日志 set global slow_query_log = ON -- 设置超过2s的查询将记录日志 set global long_query_time = 2 ```",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq027",
+      "query": "建索引的时候怎么判断一个列的选择性高不高？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq027-e1",
+          "document": "mysql",
+          "headingPath": [
+            "常见的索引原则",
+            "高选择性列优先"
+          ],
+          "anchor": "区分度高的列 区分度=`select count(distinct col)/count(*) from table`",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq028",
+      "query": "RabbitMQ里怎么用死信队列手动实现延迟队列？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq028-e1",
+          "document": "rabbitmq",
+          "headingPath": [
+            "mq实现延迟队列",
+            "实现示例",
+            "1.手动实现"
+          ],
+          "anchor": "// 2. 死信队列（真正消费的队列） @Bean public Queue dlxQueue() { return new Queue(DEAD_LETTER_QUEUE, true); } // 3. 绑定死信交换机和死信队列 @Bean public Binding dlx",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq029",
+      "query": "MySQL表数据怎么行转列，比如把科目变成列显示？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq029-e1",
+          "document": "mysql",
+          "headingPath": [
+            "表数据 student_score"
+          ],
+          "anchor": "student_id subject score 1 math 10 2 math 20 3 english 15 3 math 49 // 行转列后 student_subject_score student_id math english 1 10 null 2 20 nul",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq030",
+      "query": "怎么避免MySQL全表扫描，索引是怎么起作用的？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq030-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如果处理和避免全表扫描",
+            "1.合理创建索引"
+          ],
+          "anchor": "索引可以帮助数据库快速定位数据，b+树的原理，避免逐行扫描",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq031",
+      "query": "MySQL排序缓冲区不够用的时候怎么办，临时文件多不多怎么看？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq031-e1",
+          "document": "mysql",
+          "headingPath": [
+            "Filesort",
+            "文件排序内存不足的处理"
+          ],
+          "anchor": "当排序缓冲区（sort buffer）不足以容纳所有数据时，MySQL 会使用临时磁盘文件进行排序。这种情况下，*number_of_tmp_files* 参数会显示使用的临时文件数量。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq032",
+      "query": "ABAC和RBAC权限控制有什么不一样，ABAC更细在哪？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq032-e1",
+          "document": "scene",
+          "headingPath": [
+            "权限认证",
+            "ABAC"
+          ],
+          "anchor": "比RBAC更加细节一点的权限控制",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq033",
+      "query": "MySQL的表空间到底有什么用？能帮我管理数据、做并发控制和崩溃恢复吗？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq033-e1",
+          "document": "mysql",
+          "headingPath": [
+            "什么是表空间？什么作用？",
+            "三、表空间的核心作用"
+          ],
+          "anchor": "| 作用类别 | 具体说明 | | :----------: | :----------------------------------------------------------: | | **数据组织** | 作为逻辑容器，统一管理表数据、索引、元数据，屏蔽底层物理存储差异",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq034",
+      "query": "对话系统里怎么自动把重要信息沉淀成长期记忆？对LLM的调用和失败有什么处理方案？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq034-e1",
+          "document": "interview",
+          "headingPath": [
+            "第二部分 AI 开发",
+            "2.5 简历深挖（AI 视角）"
+          ],
+          "anchor": "**●100. episode 自动沉淀** - 非阻塞：串行队列 + AbortController，聊天回复已返回，后台异步抽取，不阻塞主流程。 - 触发闸门：关键事实意图命中（hasKeyFactIntent）或累计未沉淀消息达阈值 → 才调 LLM；+ 间隔限频 → 普通闲聊零调用，省 token。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq035",
+      "query": "MySQL里null值会影响索引使用和查询性能吗？count和distinct对null是怎么处理的？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq035-e1",
+          "document": "mysql",
+          "headingPath": [
+            "Mysql如何处理NULL？",
+            "5.性能"
+          ],
+          "anchor": "- 限制索引：where col != value的情况下，很难有效利用索引，null值也会被当作不等于value的行 - 查询优化复杂度增加：优化器对null值处理的时候，需要遵循三值逻辑，增加复杂性 - 集合函数和distinc：count（col）会跳过null，而coun",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq036",
+      "query": "分库分表常见的分片算法有哪些？各自适合什么场景，扩容哪个更简单？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq036-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表",
+            "常见的分片方法"
+          ],
+          "anchor": "| 算法 | 数据均匀 | 支持范围 / 模糊查询 | 扩容难度 | 核心适用场景 | | ---------- | -------- | ------------------- | ----------- | ------------------------ | | 取模分片",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq037",
+      "query": "面试前怎么快速检查自己准备到位没？RAG链路、架构图、量化指标这些都怎么验证？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq037-e1",
+          "document": "interview",
+          "headingPath": [
+            "附录：冲刺核对表"
+          ],
+          "anchor": "- [ ] 三大故事（●137 a/b/c）各能 2 分钟讲完，含可量化结果 - [ ] 所有数字（37/37、201、20/20、k=60、0.35/0.55/0.1、24k→40k、18%/12%）都能解释\"怎么算的\" - [ ] JVM / 并发 / MySQL / Red",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq038",
+      "query": "库存并发扣减怎么防止超卖和负数？分布式锁和Redis+Lua方案怎么选，各自有什么优缺点？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq038-e1",
+          "document": "scene",
+          "headingPath": [
+            "项目困难问题",
+            "仓库设施一致性问题",
+            "解答"
+          ],
+          "anchor": "在仓库管理系统开发中，我负责货品出入库库存模块，遇到**热门货品并发操作引发库存数量不一致**的难题。 困难主要是多请求同时操作同款货品，查询和更新库存非原子执行，出现数据覆盖、超出库、库存负数，同时分布式环境下普通锁失效，一致性和并发性能无法兼顾。 问题根源是库存查询与修改拆分执行，并发读取旧数据互相覆盖，分布式节点无法统一管控操作顺序。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq039",
+      "query": "MySQL深分页怎么优化？用子查询或者join能避免扫描大量无用数据吗？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq039-e1",
+          "document": "mysql",
+          "headingPath": [
+            "如何优化ORDER BY查询？",
+            "6.<span style=\"color:#CC0000;\">处理大偏移分页</span>",
+            "解析"
+          ],
+          "anchor": "- `id` 是**主键聚簇索引**，通过主键查询是**最快的查询方式**（O (1) 复杂度）； - 只需要**精准读取 2 行数据**，完全不扫描无用数据，磁盘 IO 几乎可以忽略 ```sql 主表 join 子查询结果 using(id) ``` - `id` 是**主键聚簇索引**，通过主键查询是**最快的查询方式**（O (1) 复杂度）； - 只需要**精准读取 20 行数据**，完全不扫描无用数据，磁盘 IO 几乎可以忽略。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "supp-lq040",
+      "query": "什么情况下光分表不够，必须做水平分库？主要看并发量还是数据量？",
+      "category": "supplemental",
+      "evidence": [
+        {
+          "evidenceId": "lq040-e1",
+          "document": "mysql",
+          "headingPath": [
+            "分库分表",
+            "什么时候需要分库分表",
+            "水平分库"
+          ],
+          "anchor": "系统并发量很大，分表难以解决问题",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    }
+  ]
+}
