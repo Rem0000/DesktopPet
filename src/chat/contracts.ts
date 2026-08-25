@@ -133,6 +133,11 @@ export type KnowledgeCitation = {
   excerpt: string
   score?: number
   headingPath?: string[]
+  /** 被注入上下文的父块与实际命中子块，用于精确溯源。 */
+  parentChunkId?: string
+  childChunkId?: string
+  childStartOffset?: number
+  childEndOffset?: number
   recallSource?: 'sparse' | 'vector' | 'both'
 }
 

@@ -77,11 +77,17 @@ function toCitationPayload(hit: KnowledgeHit) {
   return {
     documentId: hit.documentId,
     chunkId: hit.chunkId,
+    parentChunkId: hit.parentChunkId,
+    childChunkId: hit.childChunkId,
     title: hit.title,
     sourceName: hit.sourceName,
     excerpt: hit.content.slice(0, 280),
     score: hit.score,
     headingPath: hit.headingPath,
+    startOffset: hit.startOffset,
+    endOffset: hit.endOffset,
+    childStartOffset: hit.childStartOffset,
+    childEndOffset: hit.childEndOffset,
     recallSource: hit.recallSource,
   }
 }
@@ -111,6 +117,10 @@ export function citationsFromToolOutput(output: unknown): KnowledgeCitation[] {
         excerpt: value.excerpt,
       }
       if (typeof value.score === 'number') citation.score = value.score
+      if (typeof value.parentChunkId === 'string') citation.parentChunkId = value.parentChunkId
+      if (typeof value.childChunkId === 'string') citation.childChunkId = value.childChunkId
+      if (typeof value.childStartOffset === 'number') citation.childStartOffset = value.childStartOffset
+      if (typeof value.childEndOffset === 'number') citation.childEndOffset = value.childEndOffset
       if (Array.isArray(value.headingPath)) {
         citation.headingPath = value.headingPath.filter(
           (part): part is string => typeof part === 'string',

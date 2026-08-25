@@ -73,18 +73,22 @@ function resolveLocalModelPath(cacheDir: string): string | null {
   return null
 }
 
-async function createPipeline(): Promise<FeatureExtractionPipeline> {
+async function createPipeline(options: { localOnly?: boolean } = {}): Promise<FeatureExtractionPipeline> {
   const cacheDir = resolveDataSubpath('models')
   status = { state: 'loading', message: '正在加载 BGE-Small-ZH-v1.5…' }
   try {
     const { env, pipeline } = await loadTransformersModule()
     env.cacheDir = cacheDir
     env.allowLocalModels = true
-    env.allowRemoteModels = true
 
     const localModelDir = resolveLocalModelPath(cacheDir)
+    if (options.localOnly && !localModelDir) {
+      throw new Error(`未找到本地 BGE 模型：${path.join(cacheDir, BGE_SMALL_ZH_LOCAL_DIR)}`)
+    }
+
     let modelSource = BGE_SMALL_ZH_MODEL_ID
-    let localOnly = false
+    let localOnly = options.localOnly ?? false
+    env.allowRemoteModels = !localOnly
 
     if (localModelDir) {
       env.localModelPath = `${path.dirname(localModelDir)}${path.sep}`
@@ -130,9 +134,19 @@ async function createPipeline(): Promise<FeatureExtractionPipeline> {
   }
 }
 
-export async function ensureEmbeddingModelLoaded(): Promise<void> {
+export async function ensureEmbeddingModelLoaded(options: { localOnly?: boolean } = {}): Promise<void> {
+  if (options.localOnly && !resolveLocalModelPath(resolveDataSubpath('models'))) {
+    const cacheDir = resolveDataSubpath('models')
+    const manualDownloadHint = buildManualDownloadHint(cacheDir)
+    throw new EmbeddingModelError({
+      message: `Embedding 模型加载失败：未找到本地 BGE 模型：${path.join(cacheDir, BGE_SMALL_ZH_LOCAL_DIR)}`,
+      modelId: BGE_SMALL_ZH_MODEL_ID,
+      cacheDir,
+      manualDownloadHint,
+    })
+  }
   if (status.state === 'ready') return
-  if (!pipelinePromise) pipelinePromise = createPipeline()
+  if (!pipelinePromise) pipelinePromise = createPipeline(options)
   await pipelinePromise
 }
 

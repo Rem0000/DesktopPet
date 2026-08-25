@@ -199,7 +199,7 @@
 
 
 ### 6. 本地知识库 RAG + Hybrid 检索（P2 · 硬核加分）
-- 知识库与用户记忆**分库**：导入 md/txt → **结构感知切块**（按 `#`/`##`/`###` 分段，超 800 字二次切分、80 字 overlap，保留 `headingPath`）→ 双索引写入（`index.json` 元数据 + `vectors.json` 向量）→ Agent 调用 `search_knowledge` 召回。
+- 知识库与用户记忆**分库**：导入 md/txt 后按 Markdown 标题/段落形成父块（完整章节上下文），再切为带 overlap 的子块（BM25/BGE 候选）；只为子块建稀疏/向量索引，按 `parentChunkId` 去重后返回父块正文，并随引用保留最佳 `childChunkId`、headingPath 和精确偏移。旧单层索引拒绝混用并可从原文件批量重建。
 - Embedding：`Xenova/bge-small-zh-v1.5` 本地 ONNX，512 维，mean pooling + L2 normalize；权重缓存于 `data/models/`。
 - 回答展示引用来源（标题、headingPath、片段）；无命中不伪造引用，降低幻觉。
 
@@ -245,7 +245,7 @@ query
 **面试可答 / Demo：**
 - 「导入一份项目说明，问细节；回答下方能看到引用片段与 headingPath，说明不是裸模型瞎编。」
 - 「为什么不用纯向量？BM25 补精确词，向量补语义；RRF 融合不需要标定训练数据，RRF + 线性 rerank 可解释、CPU 友好。」
-- 可复现实验：`evals/retrieval/knowledge-evidence.v1.json` 冻结 4 份源文档（SHA-256 校验）、64 条查询与 source-evidence 锚点；运行时用当前 `KnowledgeStore` 重切分并严格映射，输出 Evidence Recall@10、Required Recall@10、Required MRR@10 和映射成功率，可无改标签对比 chunker A/B（`npm run eval:retrieval:kb`；真实 BGE）。
+- 可复现实验：开发回归集 `evals/retrieval/knowledge-evidence.v1.json` 冻结 4 份源文档、64 条查询与 source-evidence 锚点；另有独立父子分块结论集 `evals/retrieval/independent/parent-child-rag.v1.json`（3 份源文档、6 条查询、9 个 evidence、SHA-256/唯一 anchor 校验）。后者经 `npm run eval:retrieval:parent-child` 使用**本地** `Xenova/bge-small-zh-v1.5` 真实 Hybrid 路径运行：Evidence Recall@3 `1`、Required Recall@3 `1`、Required MRR@3 `1`、mapping success rate `1`；报告固定保存于 `evals/retrieval/independent/reports/parent-child-rag.v1.report.json`。该专用命令强制本地权重，不下载、不访问云端、不降级；普通 `npm test` 跳过真实 runner。
 
 ### 7. 评测与安全（P3 · 体现工程闭环）
 - ≥20 条本地场景：工具正确率、记忆一致性、RAG 命中。

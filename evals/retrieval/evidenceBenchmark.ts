@@ -1,8 +1,15 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { KnowledgeStore, type KnowledgeChunk, type KnowledgeHit } from '../../electron/chat/knowledgeStore'
+import {
+  CHILD_MAX_CHARS,
+  CHILD_OVERLAP_CHARS,
+  PARENT_MAX_CHARS,
+  PARENT_OVERLAP_CHARS,
+} from '../../electron/retrieval/markdownChunker'
+import { BGE_SMALL_ZH_MODEL_ID, HYBRID_DEFAULTS } from '../../electron/retrieval/types'
 
 export type Evidence = {
   evidenceId: string
@@ -39,6 +46,8 @@ export type BenchmarkCorpus = {
 
 export type EvidenceMapping = Map<string, Set<string>>
 
+export type ParentEvidenceMapping = EvidenceMapping
+
 export type QueryEvidenceScore = {
   id: string
   category: string
@@ -48,6 +57,55 @@ export type QueryEvidenceScore = {
   requiredEvidenceMrr: number
   retrievedEvidenceIds: string[]
   unmappedEvidenceIds: string[]
+}
+
+export type RetrievalEvaluationReport = {
+  benchmark: string
+  mode: 'real_embedding'
+  generatedAt: string
+  dataset: {
+    version: number
+    description: string
+    topK: number
+    corpus: CorpusDocument[]
+  }
+  model: {
+    id: string
+    localOnly: true
+  }
+  chunking: {
+    parentMaxChars: number
+    parentOverlapChars: number
+    childMaxChars: number
+    childOverlapChars: number
+  }
+  hybrid: typeof HYBRID_DEFAULTS
+  corpus: {
+    parentChunks: number
+    childChunks: number
+  }
+  evidence: {
+    total: number
+    required: number
+    mapped: number
+    mappingSuccessRate: number
+    unmapped: Array<{
+      evidenceId: string
+      document: string
+      required: boolean
+      anchor: string
+    }>
+  }
+  metrics: {
+    evidenceRecallAtK: number
+    requiredEvidenceRecallAtK: number
+    requiredEvidenceMrrAtK: number
+  }
+  perQuery: Array<QueryEvidenceScore & {
+    evidenceRecallAtK: number
+    requiredEvidenceRecallAtK: number
+    requiredEvidenceMrrAtK: number
+  }>
 }
 
 export function normalizeEvidenceText(text: string): string {
@@ -85,6 +143,7 @@ function assertDataset(dataset: EvidenceDataset): void {
   }
   const queryIds = new Set<string>()
   const evidenceIds = new Set<string>()
+  const anchors = new Set<string>()
   for (const query of dataset.queries) {
     if (!query.id || queryIds.has(query.id)) throw new Error(`query id 非法或重复：${query.id}`)
     queryIds.add(query.id)
@@ -102,7 +161,11 @@ function assertDataset(dataset: EvidenceDataset): void {
       if (!Array.isArray(evidence.headingPath) || !Number.isInteger(evidence.relevance) || evidence.relevance <= 0) {
         throw new Error(`evidence 元数据非法：${evidence.evidenceId}`)
       }
-      if (!normalizeEvidenceText(evidence.anchor)) throw new Error(`evidence anchor 为空：${evidence.evidenceId}`)
+      const anchor = normalizeEvidenceText(evidence.anchor)
+      if (!anchor) throw new Error(`evidence anchor 为空：${evidence.evidenceId}`)
+      const anchorKey = JSON.stringify([evidence.document, anchor])
+      if (anchors.has(anchorKey)) throw new Error(`evidence anchor 在同一文档重复：${evidence.evidenceId}`)
+      anchors.add(anchorKey)
       evidenceIds.add(evidence.evidenceId)
     }
   }
@@ -115,6 +178,7 @@ export async function loadEvidenceDataset(datasetPath: string): Promise<Evidence
 }
 
 export async function loadFrozenSources(dataset: EvidenceDataset, datasetDirectory: string): Promise<Map<string, string>> {
+  assertDataset(dataset)
   const sources = new Map<string, string>()
   for (const document of dataset.corpus) {
     const text = await readFile(path.resolve(datasetDirectory, document.file), 'utf8')
@@ -155,14 +219,15 @@ export async function disposeBenchmarkCorpus(corpus: BenchmarkCorpus): Promise<v
 
 export function mapEvidenceToChunks(dataset: EvidenceDataset, chunks: KnowledgeChunk[], documentIds: Map<string, string>): EvidenceMapping {
   const mappings: EvidenceMapping = new Map()
+  const parentChunks = chunks.filter((chunk) => chunk.kind !== 'child')
   for (const query of dataset.queries) {
     for (const evidence of query.evidence) {
       const documentId = documentIds.get(evidence.document)
       const anchor = normalizeEvidenceText(evidence.anchor)
       const chunkIds = new Set(
-        chunks
+        parentChunks
           .filter((chunk) => chunk.documentId === documentId && normalizeEvidenceText(chunk.content).includes(anchor))
-          .map((chunk) => chunk.chunkId),
+          .map((chunk) => chunk.parentChunkId || chunk.chunkId),
       )
       mappings.set(evidence.evidenceId, chunkIds)
     }
@@ -213,4 +278,81 @@ export function scoreEvidenceQuery(query: EvidenceQuery, hits: KnowledgeHit[], m
 
 export function average(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(6))
+}
+
+export function buildRetrievalEvaluationReport(input: {
+  benchmark: string
+  dataset: EvidenceDataset
+  scores: QueryEvidenceScore[]
+  mapping: EvidenceMapping
+  parentChunks: number
+  childChunks: number
+  generatedAt: string
+}): RetrievalEvaluationReport {
+  const evidence = input.dataset.queries.flatMap((query) => query.evidence)
+  const unmapped = evidence
+    .filter((item) => (input.mapping.get(item.evidenceId)?.size ?? 0) === 0)
+    .map((item) => ({
+      evidenceId: item.evidenceId,
+      document: item.document,
+      required: item.required,
+      anchor: item.anchor,
+    }))
+
+  return {
+    benchmark: input.benchmark,
+    mode: 'real_embedding',
+    generatedAt: input.generatedAt,
+    dataset: {
+      version: input.dataset.version,
+      description: input.dataset.description,
+      topK: input.dataset.topK,
+      corpus: input.dataset.corpus.map(({ alias, file, sha256 }) => ({ alias, file, sha256 })),
+    },
+    model: {
+      id: BGE_SMALL_ZH_MODEL_ID,
+      localOnly: true,
+    },
+    chunking: {
+      parentMaxChars: PARENT_MAX_CHARS,
+      parentOverlapChars: PARENT_OVERLAP_CHARS,
+      childMaxChars: CHILD_MAX_CHARS,
+      childOverlapChars: CHILD_OVERLAP_CHARS,
+    },
+    hybrid: HYBRID_DEFAULTS,
+    corpus: {
+      parentChunks: input.parentChunks,
+      childChunks: input.childChunks,
+    },
+    evidence: {
+      total: evidence.length,
+      required: evidence.filter((item) => item.required).length,
+      mapped: evidence.length - unmapped.length,
+      mappingSuccessRate: round((evidence.length - unmapped.length) / evidence.length),
+      unmapped,
+    },
+    metrics: {
+      evidenceRecallAtK: round(average(input.scores.map((score) => score.evidenceRecall))),
+      requiredEvidenceRecallAtK: round(average(input.scores.map((score) => score.requiredEvidenceRecall))),
+      requiredEvidenceMrrAtK: round(average(input.scores.map((score) => score.requiredEvidenceMrr))),
+    },
+    perQuery: input.scores.map((score) => ({
+      ...score,
+      evidenceRecallAtK: score.evidenceRecall,
+      requiredEvidenceRecallAtK: score.requiredEvidenceRecall,
+      requiredEvidenceMrrAtK: score.requiredEvidenceMrr,
+    })),
+  }
+}
+
+export async function writeRetrievalEvaluationReport(
+  reportPath: string,
+  report: RetrievalEvaluationReport,
+): Promise<void> {
+  await mkdir(path.dirname(reportPath), { recursive: true })
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
 }

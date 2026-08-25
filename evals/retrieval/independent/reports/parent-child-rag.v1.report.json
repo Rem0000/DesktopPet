@@ -1,0 +1,158 @@
+{
+  "benchmark": "parent-child-rag.v1",
+  "mode": "real_embedding",
+  "generatedAt": "2026-08-25T08:21:40.334Z",
+  "dataset": {
+    "version": 1,
+    "description": "Independent frozen source-evidence corpus for parent-child knowledge RAG evaluation. Sources, query IDs, and evidence anchors are isolated from knowledge-evidence.v1.",
+    "topK": 3,
+    "corpus": [
+      {
+        "alias": "rag-architecture",
+        "file": "corpus/rag-architecture.md",
+        "sha256": "086a5c9db39d631cd7bc1d44c2b940a46c8daa65cec0bc0448a5a81003d8148c"
+      },
+      {
+        "alias": "agent-tools",
+        "file": "corpus/agent-tools.md",
+        "sha256": "b6739e2c24ff363d69fc5e434429674aaea7cc700210c82e1175b042c0d767b6"
+      },
+      {
+        "alias": "context-management",
+        "file": "corpus/context-management.md",
+        "sha256": "871510eee4e88fec2c0b42892856a2b8ad656b4b55d1c55f59a2f55c42ffc3ff"
+      }
+    ]
+  },
+  "model": {
+    "id": "Xenova/bge-small-zh-v1.5",
+    "localOnly": true
+  },
+  "chunking": {
+    "parentMaxChars": 1200,
+    "parentOverlapChars": 120,
+    "childMaxChars": 420,
+    "childOverlapChars": 60
+  },
+  "hybrid": {
+    "sparseTopK": 20,
+    "vectorTopK": 20,
+    "rerankTopK": 10,
+    "rrfK": 60,
+    "alpha": 0.35,
+    "beta": 0.55,
+    "gamma": 0.1,
+    "minScore": 0.18
+  },
+  "corpus": {
+    "parentChunks": 3,
+    "childChunks": 3
+  },
+  "evidence": {
+    "total": 9,
+    "required": 6,
+    "mapped": 9,
+    "mappingSuccessRate": 1,
+    "unmapped": []
+  },
+  "metrics": {
+    "evidenceRecallAtK": 1,
+    "requiredEvidenceRecallAtK": 1,
+    "requiredEvidenceMrrAtK": 1
+  },
+  "perQuery": [
+    {
+      "id": "pc-rag-001",
+      "category": "hybrid-retrieval",
+      "query": "知识库为什么同时使用 BM25 和 BGE 向量检索？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-001-required",
+        "pc-rag-001-fusion"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    },
+    {
+      "id": "pc-rag-002",
+      "category": "parent-child-chunking",
+      "query": "父子分块中父块和子块分别承担什么职责？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-002-required"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    },
+    {
+      "id": "pc-rag-003",
+      "category": "tool-boundary",
+      "query": "Agent 工具调用有哪些安全边界？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-003-required",
+        "pc-rag-003-untrusted"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    },
+    {
+      "id": "pc-rag-004",
+      "category": "tool-boundary",
+      "query": "检索知识库为什么最多只会重规划一次？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-004-required"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    },
+    {
+      "id": "pc-rag-005",
+      "category": "context-management",
+      "query": "长对话中如何避免早期消息被静默丢失？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-005-required"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    },
+    {
+      "id": "pc-rag-006",
+      "category": "context-management",
+      "query": "search_history 和会话摘要分别解决什么问题？",
+      "evidenceRecall": 1,
+      "requiredEvidenceRecall": 1,
+      "requiredEvidenceMrr": 1,
+      "retrievedEvidenceIds": [
+        "pc-rag-006-required",
+        "pc-rag-006-bm25"
+      ],
+      "unmappedEvidenceIds": [],
+      "evidenceRecallAtK": 1,
+      "requiredEvidenceRecallAtK": 1,
+      "requiredEvidenceMrrAtK": 1
+    }
+  ]
+}

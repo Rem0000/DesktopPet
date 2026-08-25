@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "description": "Independent frozen source-evidence corpus for parent-child knowledge RAG evaluation. Sources, query IDs, and evidence anchors are isolated from knowledge-evidence.v1.",
+  "topK": 3,
+  "corpus": [
+    {
+      "alias": "rag-architecture",
+      "file": "corpus/rag-architecture.md",
+      "sha256": "086a5c9db39d631cd7bc1d44c2b940a46c8daa65cec0bc0448a5a81003d8148c"
+    },
+    {
+      "alias": "agent-tools",
+      "file": "corpus/agent-tools.md",
+      "sha256": "b6739e2c24ff363d69fc5e434429674aaea7cc700210c82e1175b042c0d767b6"
+    },
+    {
+      "alias": "context-management",
+      "file": "corpus/context-management.md",
+      "sha256": "871510eee4e88fec2c0b42892856a2b8ad656b4b55d1c55f59a2f55c42ffc3ff"
+    }
+  ],
+  "queries": [
+    {
+      "id": "pc-rag-001",
+      "query": "知识库为什么同时使用 BM25 和 BGE 向量检索？",
+      "category": "hybrid-retrieval",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-001-required",
+          "document": "rag-architecture",
+          "headingPath": ["DesktopPet RAG Architecture"],
+          "anchor": "Hybrid 检索同时使用 BM25 与 BGE 向量：BM25 擅长精确词、专有名词和编号，向量检索擅长语义改写。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "pc-rag-001-fusion",
+          "document": "rag-architecture",
+          "headingPath": ["DesktopPet RAG Architecture"],
+          "anchor": "两路结果通过 RRF 融合，再按 headingPath 做轻量元数据加分。",
+          "relevance": 2,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "pc-rag-002",
+      "query": "父子分块中父块和子块分别承担什么职责？",
+      "category": "parent-child-chunking",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-002-required",
+          "document": "rag-architecture",
+          "headingPath": ["DesktopPet RAG Architecture"],
+          "anchor": "知识库父块保存章节上下文，子块承担精确检索与向量索引；最终按 parentChunkId 去重后返回父块正文，并保留 childChunkId 作为引用证据。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "pc-rag-003",
+      "query": "Agent 工具调用有哪些安全边界？",
+      "category": "tool-boundary",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-003-required",
+          "document": "agent-tools",
+          "headingPath": ["DesktopPet Agent Tool Boundary"],
+          "anchor": "模型只能从注册的白名单工具中规划调用；每个工具参数都会校验，confirm 风险级操作必须经用户确认。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "pc-rag-003-untrusted",
+          "document": "agent-tools",
+          "headingPath": ["DesktopPet Agent Tool Boundary"],
+          "anchor": "search_knowledge 的命中内容必须作为不可信引用处理，模型只能基于返回 excerpt 回答，空结果时不得虚构文档内容。",
+          "relevance": 2,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "pc-rag-004",
+      "query": "检索知识库为什么最多只会重规划一次？",
+      "category": "tool-boundary",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-004-required",
+          "document": "agent-tools",
+          "headingPath": ["DesktopPet Agent Tool Boundary"],
+          "anchor": "知识库检索最多触发一次重规划，调用轮数受硬上限控制。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "pc-rag-005",
+      "query": "长对话中如何避免早期消息被静默丢失？",
+      "category": "context-management",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-005-required",
+          "document": "context-management",
+          "headingPath": ["DesktopPet Context Management"],
+          "anchor": "normalize 保留裁剪前 allMessages，assemble 根据可见窗口溢出生成滚动摘要；窗口外消息按重要性加权补齐，并保持原始顺序。",
+          "relevance": 3,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "pc-rag-006",
+      "query": "search_history 和会话摘要分别解决什么问题？",
+      "category": "context-management",
+      "evidence": [
+        {
+          "evidenceId": "pc-rag-006-required",
+          "document": "context-management",
+          "headingPath": ["DesktopPet Context Management"],
+          "anchor": "摘要是有损常驻压缩，历史检索是按需无损兜底。",
+          "relevance": 3,
+          "required": true
+        },
+        {
+          "evidenceId": "pc-rag-006-bm25",
+          "document": "context-management",
+          "headingPath": ["DesktopPet Context Management"],
+          "anchor": "search_history 使用 BM25 从当前模型包的历史会话中逐字找回早期内容。",
+          "relevance": 2,
+          "required": false
+        }
+      ]
+    }
+  ]
+}
