@@ -4,7 +4,7 @@ import {
   buildJudgePrompt,
   parseJudgeResult,
   type JudgeScenario,
-} from './run.judge.eval.test'
+} from './judge/prompts'
 
 const sampleScenario: JudgeScenario = {
   id: 'hallucination-honest-remember-failure',
