@@ -7,6 +7,8 @@ export type ToolTimelineItem = {
   errorCode?: string
   latencyMs?: number
   inputSummary?: string
+  /** 工具真实输出预览（来自链路投影，超限时提示查看追踪台） */
+  outputPreview?: string
   hitCount?: number
 }
 
@@ -33,6 +35,7 @@ export function hydrateToolStateFromTraces(
       errorCode: trace.errorCode,
       latencyMs: trace.latencyMs,
       inputSummary: trace.inputSummary,
+      outputPreview: trace.outputPreview,
       hitCount:
         trace.toolName === 'search_knowledge'
           ? (trace.citations?.length ?? 0)

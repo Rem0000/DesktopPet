@@ -102,7 +102,7 @@ describe('relationship intent routing', () => {
     })
     const planToolCalls = vi.fn(async () => ({ toolCalls: [] }))
     const runtime = new AgentRuntime(
-      { stream: async () => '', planToolCalls },
+      { stream: async () => ({ text: '' }), planToolCalls },
       tools,
       undefined,
       24_000,
@@ -150,7 +150,7 @@ describe('relationship intent routing', () => {
     })
     const planToolCalls = vi.fn(async () => ({ toolCalls: [] }))
     const runtime = new AgentRuntime(
-      { stream: async () => '', planToolCalls },
+      { stream: async () => ({ text: '' }), planToolCalls },
       tools,
     )
     await runtime.run({

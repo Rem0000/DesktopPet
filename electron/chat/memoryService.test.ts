@@ -154,7 +154,7 @@ describe('MemoryService', () => {
         stream: async (_messages, _config, _signal, onToken, systemPrompt) => {
           const reply = systemPrompt?.includes('喜欢咖啡') ? '好的，记得你喜欢咖啡' : '你好'
           onToken(reply)
-          return reply
+          return { text: reply }
         },
       },
       tools,
@@ -208,7 +208,7 @@ describe('MemoryService', () => {
             ? '好的，已记住提醒喝水'
             : '你好'
           onToken(reply)
-          return reply
+          return { text: reply }
         },
         planToolCalls,
       },
@@ -237,7 +237,7 @@ describe('MemoryService', () => {
       {
         stream: async (_messages, _config, _signal, onToken) => {
           onToken('照常回复')
-          return '照常回复'
+          return { text: '照常回复' }
         },
         planToolCalls: async () => {
           throw new Error('plan failed')
@@ -366,7 +366,7 @@ describe('MemoryService', () => {
           seenSystemPrompt = systemPrompt ?? ''
           const reply = 'ok'
           onToken(reply)
-          return reply
+          return { text: reply }
         },
       },
       tools,

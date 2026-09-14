@@ -16,6 +16,7 @@ describe('hydrateToolStateFromTraces', () => {
         ok: true,
         latencyMs: 50,
         inputSummary: '{"content":"喜欢猫"}',
+        outputPreview: '{"ok":true,"item":{"id":"m1"}}',
       },
       {
         requestId: 'r2',
@@ -51,6 +52,8 @@ describe('hydrateToolStateFromTraces', () => {
     const hydrated = hydrateToolStateFromTraces(traces, new Set([messageId]))
     expect(hydrated.toolTimelines[messageId]).toHaveLength(2)
     expect(hydrated.toolTimelines[messageId]?.[1]?.hitCount).toBe(1)
+    // 真实输出预览随链路投影回填（聊天窗展开可见）
+    expect(hydrated.toolTimelines[messageId]?.[0]?.outputPreview).toContain('"id":"m1"')
     expect(hydrated.citationsByMessage[messageId]).toHaveLength(1)
     expect(hydrated.toolTimelines['other-msg']).toBeUndefined()
   })

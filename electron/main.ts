@@ -46,6 +46,7 @@ let mainWindow: BrowserWindow | null = null
 let managerWindow: BrowserWindow | null = null
 let chatWindow: BrowserWindow | null = null
 let novelWindow: BrowserWindow | null = null
+let traceWindow: BrowserWindow | null = null
 let chatService: ChatService | null = null
 let tray: Tray | null = null
 let clickThrough = false
@@ -273,6 +274,10 @@ function buildPetMenuTemplate(state: PetMenuState = {}): Electron.MenuItemConstr
       label: '小说工坊',
       click: () => openNovelWindow(),
     },
+    {
+      label: '链路追踪台',
+      click: () => openTraceConsoleWindow(),
+    },
     { type: 'separator' },
     {
       label: '显示 / 隐藏',
@@ -431,6 +436,43 @@ function notifyLibraryChanged() {
   if (managerWindow && !managerWindow.isDestroyed()) {
     managerWindow.webContents.send('live2d:library-changed')
   }
+}
+
+/** 链路追踪台：只读查看会话链路（事件时间轴 / token 用量 / 工具参数与结果） */
+function openTraceConsoleWindow() {
+  if (traceWindow && !traceWindow.isDestroyed()) {
+    if (!traceWindow.isVisible()) traceWindow.show()
+    traceWindow.focus()
+    return
+  }
+
+  traceWindow = new BrowserWindow({
+    width: 1180,
+    height: 800,
+    minWidth: 820,
+    minHeight: 560,
+    title: '链路追踪台',
+    autoHideMenuBar: true,
+    backgroundColor: '#12161c',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+    void traceWindow.loadURL(
+      `${process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '')}/trace.html`,
+    )
+  } else {
+    void traceWindow.loadFile(path.join(__dirname, '../dist/trace.html'))
+  }
+
+  traceWindow.on('closed', () => {
+    traceWindow = null
+  })
 }
 
 function buildSessionFromPackage(
@@ -655,6 +697,10 @@ function registerIpc() {
 
   ipcMain.handle('live2d:open-manager', () => {
     openManagerWindow()
+  })
+  ipcMain.handle('traces:open-console', () => {
+    openTraceConsoleWindow()
+    return { ok: true as const }
   })
 
   ipcMain.handle('live2d:notify-library-changed', () => {

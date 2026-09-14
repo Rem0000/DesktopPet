@@ -1,3 +1,5 @@
+import type { TokenUsage } from '../trace/contracts'
+
 export type ChatRole = 'user' | 'assistant'
 
 export type ChatMessageStatus = 'streaming' | 'complete' | 'cancelled' | 'error'
@@ -82,8 +84,11 @@ export type PendingToolCall = {
 
 /**
  * 统一的大模型 Provider 接口（Chat 主链路由 AgentRuntime 消费）。
- * planToolCalls 可选：不支持的实现返回 { toolCalls: [] }（AgentRuntime 已防御）。
- * 新增 Provider 时实现本接口并在 providerFactory.createProvider 注册分支即可。
+ *
+ * 每次调用 MUST 返回文本与计量：`usage` 为 provider 报告的 token 用量（未缓存输入 / 输出 /
+ * 缓存读 / 缓存写四类互斥计数，推理 token 为输出子集）；provider 未返回用量时由实现按字符
+ * 密度估算并置 `estimated: true`，MUST NOT 伪造成精确计量。流式调用额外返回首字延迟。
+ * 详见 openspec/changes/add-agent-trace-module/（design D4/D8）。
  */
 export type ChatProvider = {
   readonly kind: string
@@ -93,25 +98,44 @@ export type ChatProvider = {
     signal: AbortSignal,
     onToken: (token: string) => void,
     systemPrompt?: string,
-  ) => Promise<string>
+  ) => Promise<ProviderCallResult>
   planToolCalls?: (
     messages: ChatMessage[],
     config: ProviderRuntimeConfig,
     signal: AbortSignal,
     systemPrompt: string,
     tools: AgentTool[],
-  ) => Promise<{ toolCalls: PendingToolCall[]; text?: string }>
+  ) => Promise<ProviderPlanResult>
   summarize: (
     messages: ChatMessage[],
     config: ProviderRuntimeConfig,
     signal: AbortSignal,
-  ) => Promise<string>
+  ) => Promise<ProviderCallResult>
   completeText: (
     systemPrompt: string,
     userPrompt: string,
     config: ProviderRuntimeConfig,
     signal: AbortSignal,
-  ) => Promise<string>
+  ) => Promise<ProviderCallResult>
+}
+
+/** 一次模型调用的结果：文本 + 计量（用量缺失时由实现标记 estimated） */
+export type ProviderCallResult = {
+  text: string
+  /** token 用量；实现 MUST 在缺失时给出估算值并标记 */
+  usage?: TokenUsage
+  /** 首字延迟（流式） */
+  ttftMs?: number
+  /** provider 报告的结束原因（如 stop / length / tool_calls） */
+  finishReason?: string
+}
+
+/** 工具规划调用结果 */
+export type ProviderPlanResult = {
+  toolCalls: PendingToolCall[]
+  text?: string
+  usage?: TokenUsage
+  finishReason?: string
 }
 
 export type SendChatInput = {
@@ -274,6 +298,8 @@ export type ChatStreamEvent =
       errorCode?: string
       latencyMs?: number
       inputSummary?: string
+      /** 工具真实输出预览（超限时提示在链路追踪台查看原文） */
+      outputPreview?: string
       citations?: KnowledgeCitation[]
     }
   | {
@@ -281,6 +307,8 @@ export type ChatStreamEvent =
       requestId: string
       sessionId: string
       message: ChatMessage
+      /** 本轮 token 用量（来自链路投影）；缺省表示暂不可得 */
+      usage?: TokenUsage
     }
   | {
       type: 'error'
@@ -357,6 +385,8 @@ export type ToolTraceRecord = {
   errorCode?: string
   latencyMs: number
   inputSummary?: string
+  /** 工具真实输出的预览（超限时原文外置于 traces/blobs，可在链路追踪台查看） */
+  outputPreview?: string
   /** search_knowledge 命中时的引用，用于重开聊天窗后恢复 */
   citations?: KnowledgeCitation[]
 }

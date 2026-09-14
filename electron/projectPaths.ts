@@ -73,6 +73,42 @@ export function resolveDataSubpath(subpath: DataSubpath): string {
   return path.join(resolveDataRoot(), subpath)
 }
 
+/** 链路追踪数据目录：sessions（会话事件流）/ blobs（外置原文）/ legacy（旧日报只读保留） */
+export type TraceDirPaths = {
+  root: string
+  sessions: string
+  blobs: string
+  legacy: string
+}
+
+export function resolveTracePaths(): TraceDirPaths {
+  const root = resolveDataSubpath('traces')
+  return {
+    root,
+    sessions: path.join(root, 'sessions'),
+    blobs: path.join(root, 'blobs'),
+    legacy: path.join(root, 'legacy'),
+  }
+}
+
+/**
+ * 把任意字符串编码为单个安全路径段：安全码元保持字面，其余（含 `~`、分隔符、`.`/`..`）
+ * 转义为 `~XXXX`。会话 id 来自渲染进程输入，落盘前 MUST 经过本函数，避免路径穿越。
+ */
+export function encodeTraceSegment(raw: string): string {
+  if (raw.length === 0) throw new Error('cannot encode an empty path segment')
+  if (raw === '.') return '~002E'
+  if (raw === '..') return '~002E~002E'
+  let out = ''
+  for (let i = 0; i < raw.length; i += 1) {
+    const code = raw.charCodeAt(i)
+    const ch = String.fromCharCode(code)
+    if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) out += ch
+    else out += `~${code.toString(16).toUpperCase().padStart(4, '0')}`
+  }
+  return out
+}
+
 const ALL_SUBPATHS: DataSubpath[] = [
   'chat',
   'memory',
@@ -86,12 +122,16 @@ const ALL_SUBPATHS: DataSubpath[] = [
   'relationships',
 ]
 
-/** 确保数据子目录存在 */
+/** 确保数据子目录存在（含链路追踪的 sessions/blobs/legacy） */
 export async function ensureDataDirs(): Promise<void> {
   const { mkdir } = await import('node:fs/promises')
-  await Promise.all(
-    ALL_SUBPATHS.map((subpath) =>
+  const trace = resolveTracePaths()
+  await Promise.all([
+    ...ALL_SUBPATHS.map((subpath) =>
       mkdir(resolveDataSubpath(subpath), { recursive: true }),
     ),
-  )
+    mkdir(trace.sessions, { recursive: true }),
+    mkdir(trace.blobs, { recursive: true }),
+    mkdir(trace.legacy, { recursive: true }),
+  ])
 }

@@ -1,4 +1,5 @@
 import type { ContextUsage, ContextUsagePart } from '../../src/chat/contracts'
+import type { TraceContextProjection } from '../../src/trace/contracts'
 
 /** 上下文按来源拆分（对齐 Claude Code 的 Messages / System tools / System prompt / Memory files / Skills） */
 export type ContextSectionBreakdown = {
@@ -77,8 +78,22 @@ export function breakdownToUsage(
   }
 }
 
-/** 会话级上下文占用表：key = `${packageId}/${sessionId}`，仅最近一次组装观测 */
-export class ContextUsageTracker {
+/**
+ * 把链路日志折叠出的上下文压力投影换算为聊天窗使用的 ContextUsage。
+ * 与 breakdownToUsage 同构，但数据来自「按次落盘」的 `request/context` 事件而非内存快照。
+ */
+export function projectionToUsage(projection: TraceContextProjection): ContextUsage {
+  const breakdown: ContextSectionBreakdown = {
+    systemPromptCharacters: projection.parts.systemPrompt,
+    systemToolsCharacters: projection.parts.systemTools,
+    skillsCharacters: projection.parts.skills,
+    memoryCharacters: projection.parts.memory,
+    messagesCharacters: projection.parts.messages,
+  }
+  return breakdownToUsage(breakdown, projection.budgetCharacters)
+}
+
+/** 会话级上下文占用表：key = `${packageId}/${sessionId}`，仅最近一次组装观测 */export class ContextUsageTracker {
   private readonly bySession = new Map<string, ContextObservation>()
 
   private keyOf(sessionId: string, packageId: string): string {

@@ -311,6 +311,43 @@ const api = {
     cancel: (id: string): Promise<boolean> =>
       ipcRenderer.invoke('reminders:cancel', id),
   },
+  traces: {
+    listSessions: (): Promise<import('../src/trace/contracts').TraceSessionSummary[]> =>
+      ipcRenderer.invoke('traces:list-sessions'),
+    readSession: (
+      sessionId: string,
+      options?: import('../src/trace/contracts').TraceReadOptions,
+    ): Promise<import('../src/trace/contracts').TraceReadResult> =>
+      ipcRenderer.invoke('traces:read-session', sessionId, options),
+    sessionSummary: (
+      sessionId: string,
+    ): Promise<import('../src/trace/contracts').TraceSessionSummary | null> =>
+      ipcRenderer.invoke('traces:session-summary', sessionId),
+    exportSession: (
+      sessionId: string,
+      format: 'json' | 'markdown',
+    ): Promise<{ canceled: boolean; filePath?: string; error?: string }> =>
+      ipcRenderer.invoke('traces:export', sessionId, format),
+    collectGarbage: (): Promise<{
+      removedSessions: number
+      removedBlobs: number
+      freedBytes: number
+    }> => ipcRenderer.invoke('traces:gc'),
+    openConsole: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('traces:open-console'),
+    subscribeLive: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('traces:live-subscribe'),
+    unsubscribeLive: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('traces:live-unsubscribe'),
+    onLive: (cb: (payload: import('../src/trace/contracts').TraceLiveEvent) => void) => {
+      const handler = (_: unknown, payload: import('../src/trace/contracts').TraceLiveEvent) =>
+        cb(payload)
+      ipcRenderer.on('traces:live', handler)
+      return () => {
+        ipcRenderer.removeListener('traces:live', handler)
+      }
+    },
+  },
   relationship: {
     get: (packageId: string): Promise<RelationshipPanelView> =>
       ipcRenderer.invoke('relationship:get', packageId),

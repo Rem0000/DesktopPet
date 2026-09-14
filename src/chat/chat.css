@@ -213,8 +213,47 @@ button {
 .conversation-header,
 .chat-notice,
 .chat-composer,
-.context-usage {
+.context-usage,
+.usage-chip {
   flex: 0 0 auto;
+}
+
+/* 链路投影的 token 用量：只呈现计数，不做金额换算 */
+.usage-chip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-end;
+  max-width: 100%;
+  margin: 2px 8px 6px 0;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #6f7b8d;
+  background: rgba(64, 128, 220, 0.08);
+  user-select: none;
+}
+
+.tool-output {
+  margin-top: 2px;
+}
+
+.tool-output summary {
+  cursor: pointer;
+  color: #8a94a6;
+}
+
+.tool-output pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
 }
 
 .context-usage {

@@ -10,9 +10,12 @@ import type {
   ChatError,
   ChatMessage,
   ChatProvider,
+  ProviderCallResult,
   ProviderConfigInput,
+  ProviderPlanResult,
   ProviderRuntimeConfig,
 } from '../../src/chat/contracts'
+import type { TokenUsage } from '../../src/trace/contracts'
 import type { PendingToolCall } from './agentRuntime'
 
 export const DEFAULT_SYSTEM_PROMPT =
@@ -160,6 +163,108 @@ export function normalizeProviderError(error: unknown, kind = 'DeepSeek'): ChatE
   return { code: 'unknown', message: '生成回复失败，请稍后重试', retryable: true }
 }
 
+/** LangChain 归一化后的用量元数据 */
+type UsageMetadata = {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  input_token_details?: { cache_read?: number; cache_creation?: number }
+  output_token_details?: { reasoning?: number }
+}
+
+/** provider 原始 usage 字段（含 DeepSeek 的 prompt_cache_hit_tokens） */
+type RawUsage = {
+  prompt_tokens?: number
+  completion_tokens?: number
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+  prompt_tokens_details?: { cached_tokens?: number }
+  completion_tokens_details?: { reasoning_tokens?: number }
+}
+
+type ResponseMetadata = {
+  usage?: RawUsage
+  finish_reason?: string
+  model_name?: string
+}
+
+/**
+ * 把 provider 报告的用量映射为四类互斥计数：`inputTokens` 只计未缓存输入
+ * （prompt − 缓存读），缓存读/写单列，推理 token 为输出子集（不重复累加）。
+ * 两套字段都缺失时返回 undefined，由调用方决定是否估算。
+ */
+export function toTokenUsage(
+  metadata: UsageMetadata | undefined,
+  raw: RawUsage | undefined,
+): TokenUsage | undefined {
+  const promptTokens = metadata?.input_tokens ?? raw?.prompt_tokens
+  const completionTokens = metadata?.output_tokens ?? raw?.completion_tokens
+  if (typeof promptTokens !== 'number' && typeof completionTokens !== 'number') {
+    return undefined
+  }
+  const cacheRead =
+    metadata?.input_token_details?.cache_read ??
+    raw?.prompt_tokens_details?.cached_tokens ??
+    raw?.prompt_cache_hit_tokens ??
+    0
+  const cacheWrite = metadata?.input_token_details?.cache_creation ?? 0
+  const reasoning =
+    metadata?.output_token_details?.reasoning ??
+    raw?.completion_tokens_details?.reasoning_tokens ??
+    0
+  const prompt = promptTokens ?? 0
+  return {
+    inputTokens: Math.max(0, prompt - cacheRead),
+    outputTokens: completionTokens ?? 0,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+    reasoningTokens: reasoning,
+  }
+}
+
+/**
+ * CJK 感知的 token 估算：中日韩字符约 1 字 1 token，其余按 4 字符 1 token。
+ * 仅用于 provider 未返回用量的兜底，结果 MUST 标记 `estimated`。
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0
+  let cjk = 0
+  let other = 0
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    const isCjk =
+      (code >= 0x2e80 && code <= 0x9fff) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef)
+    if (isCjk) cjk += 1
+    else other += 1
+  }
+  return cjk + Math.ceil(other / 4)
+}
+
+export function estimateUsage(promptText: string, outputText: string): TokenUsage {
+  return {
+    inputTokens: estimateTokens(promptText),
+    outputTokens: estimateTokens(outputText),
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+    estimated: true,
+  }
+}
+
+function readUsage(
+  result: unknown,
+): { usage?: TokenUsage; finishReason?: string } {
+  const metadata = (result as { usage_metadata?: UsageMetadata }).usage_metadata
+  const responseMetadata = (result as { response_metadata?: ResponseMetadata })
+    .response_metadata
+  return {
+    usage: toTokenUsage(metadata, responseMetadata?.usage),
+    finishReason: responseMetadata?.finish_reason,
+  }
+}
+
 export class DeepSeekProvider implements ChatProvider {
   readonly kind = 'deepseek' as const
 
@@ -169,7 +274,7 @@ export class DeepSeekProvider implements ChatProvider {
     signal: AbortSignal,
     onToken: (token: string) => void,
     systemPrompt: string = DEFAULT_SYSTEM_PROMPT,
-  ): Promise<string> {
+  ): Promise<ProviderCallResult> {
     const model = new ChatOpenAI({
       apiKey: config.apiKey,
       model: config.model,
@@ -181,18 +286,34 @@ export class DeepSeekProvider implements ChatProvider {
       },
     })
 
+    const started = Date.now()
+    let ttftMs: number | undefined
     let reply = ''
+    let usage: TokenUsage | undefined
+    let finishReason: string | undefined
     const stream = await model.stream(
       [new SystemMessage(systemPrompt), ...toLangChainMessages(messages)],
       { signal },
     )
     for await (const chunk of stream) {
+      // 用量的末帧（content 为空）由 provider 在 stream_options.include_usage 下给出
+      const { usage: chunkUsage, finishReason: chunkFinish } = readUsage(chunk)
+      if (chunkUsage) usage = chunkUsage
+      if (chunkFinish) finishReason = chunkFinish
       const token = textFromContent(chunk.content)
       if (!token) continue
+      ttftMs ??= Date.now() - started
       reply += token
       onToken(token)
     }
-    return reply.trim()
+    const text = reply.trim()
+    const promptText = [systemPrompt, ...messages.map((message) => message.content)].join('\n')
+    return {
+      text,
+      usage: usage ?? estimateUsage(promptText, text),
+      ttftMs,
+      finishReason,
+    }
   }
 
   async planToolCalls(
@@ -201,7 +322,7 @@ export class DeepSeekProvider implements ChatProvider {
     signal: AbortSignal,
     systemPrompt: string,
     tools: AgentTool[],
-  ): Promise<{ toolCalls: PendingToolCall[]; text?: string }> {
+  ): Promise<ProviderPlanResult> {
     const openAiTools = toOpenAiTools(tools)
     if (openAiTools.length === 0) return { toolCalls: [] }
 
@@ -217,25 +338,34 @@ export class DeepSeekProvider implements ChatProvider {
     }).bindTools(openAiTools, { tool_choice: 'auto' })
 
     const recent = messages.slice(-8)
+    const plannerPrompt = `${systemPrompt}\n\n${MEMORY_PLAN_INSTRUCTION}`
     const result = await model.invoke(
-      [
-        new SystemMessage(`${systemPrompt}\n\n${MEMORY_PLAN_INSTRUCTION}`),
-        ...toLangChainMessages(recent),
-      ],
+      [new SystemMessage(plannerPrompt), ...toLangChainMessages(recent)],
       { signal },
     )
 
     const allowed = new Set(tools.map((tool) => tool.name))
     const toolCalls = parseToolCalls(result.tool_calls, allowed)
     const text = textFromContent(result.content).trim()
-    return { toolCalls, text: text || undefined }
+    const { usage, finishReason } = readUsage(result)
+    return {
+      toolCalls,
+      text: text || undefined,
+      usage:
+        usage ??
+        estimateUsage(
+          [plannerPrompt, ...recent.map((message) => message.content)].join('\n'),
+          text,
+        ),
+      finishReason,
+    }
   }
 
   async summarize(
     messages: ChatMessage[],
     config: ProviderRuntimeConfig,
     signal: AbortSignal,
-  ): Promise<string> {
+  ): Promise<ProviderCallResult> {
     const model = new ChatOpenAI({
       apiKey: config.apiKey,
       model: config.model,
@@ -257,16 +387,19 @@ export class DeepSeekProvider implements ChatProvider {
       fullTranscript.length <= HEAD_CHARS + TAIL_CHARS
         ? fullTranscript
         : `${fullTranscript.slice(0, HEAD_CHARS)}\n…（中段省略）…\n${fullTranscript.slice(-TAIL_CHARS)}`
+    const systemPrompt =
+      '请将下列早期对话压缩为简洁中文要点摘要，保留稳定事实与偏好，不要编造。'
     const result = await model.invoke(
-      [
-        new SystemMessage(
-          '请将下列早期对话压缩为简洁中文要点摘要，保留稳定事实与偏好，不要编造。',
-        ),
-        new HumanMessage(transcript || '（无内容）'),
-      ],
+      [new SystemMessage(systemPrompt), new HumanMessage(transcript || '（无内容）')],
       { signal },
     )
-    return textFromContent(result.content).trim()
+    const text = textFromContent(result.content).trim()
+    const { usage, finishReason } = readUsage(result)
+    return {
+      text,
+      usage: usage ?? estimateUsage(`${systemPrompt}\n${transcript}`, text),
+      finishReason,
+    }
   }
 
   /** 非流式单轮补全：供关系演化反思等一次性结构化调用复用 */
@@ -275,7 +408,7 @@ export class DeepSeekProvider implements ChatProvider {
     userPrompt: string,
     config: ProviderRuntimeConfig,
     signal: AbortSignal,
-  ): Promise<string> {
+  ): Promise<ProviderCallResult> {
     const model = new ChatOpenAI({
       apiKey: config.apiKey,
       model: config.model,
@@ -290,6 +423,12 @@ export class DeepSeekProvider implements ChatProvider {
       [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
       { signal },
     )
-    return textFromContent(result.content).trim()
+    const text = textFromContent(result.content).trim()
+    const { usage, finishReason } = readUsage(result)
+    return {
+      text,
+      usage: usage ?? estimateUsage(`${systemPrompt}\n${userPrompt}`, text),
+      finishReason,
+    }
   }
 }

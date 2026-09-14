@@ -250,5 +250,35 @@
     "category": "guard",
     "description": "用户可写的记忆内容进 prompt 前被不可信区包裹",
     "assert": "guard_memory_not_instruction"
+  },
+  {
+    "id": "trace-usage-recorded",
+    "category": "trace",
+    "description": "每次模型调用都有用量或估算标记，轮次汇总等于各次之和",
+    "assert": "trace_usage_recorded"
+  },
+  {
+    "id": "trace-args-output-faithful",
+    "category": "trace",
+    "description": "链路记录的工具有参与输出与真实执行一致（非占位符）",
+    "assert": "trace_args_output_faithful"
+  },
+  {
+    "id": "trace-terminal-status",
+    "category": "trace",
+    "description": "取消的轮次有明确终态且此前事件保留",
+    "assert": "trace_terminal_status"
+  },
+  {
+    "id": "trace-write-failure-safe",
+    "category": "trace",
+    "description": "链路落盘不可用时对话仍正常完成",
+    "assert": "trace_write_failure_safe"
+  },
+  {
+    "id": "trace-no-plaintext-key",
+    "category": "trace",
+    "description": "含疑似密钥的入参在链路日志、外置原文与导出中均不落明文",
+    "assert": "trace_no_plaintext_key"
   }
 ]

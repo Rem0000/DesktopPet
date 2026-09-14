@@ -1,9 +1,7 @@
 ## Purpose
 
 基于 LangChain/LangGraph 的桌宠对话 Agent 运行时：会话隔离、角色约束、上下文裁剪、长期记忆召回与可扩展工具边界。
-
 ## Requirements
-
 ### Requirement: LangGraph 对话运行时
 系统 SHALL 使用 LangChain/LangGraph JS 在 Electron 主进程中执行桌宠对话图，并 SHALL 以会话标识隔离每个会话的消息状态。对话图 MUST 在模型调用前包含 recall 组装步骤，将当前模型人设（或默认提示）、跨模型共享的用户画像与事实记忆、以及会话摘要纳入上下文。
 
@@ -180,15 +178,20 @@ Agent 运行时 SHALL 默认注册提醒白名单工具 schedule_reminder、canc
 - **THEN** 现有聊天 IPC 与窗口协议无需修改即可在后续对话中规划并执行该工具
 
 ### Requirement: 工具调用观测事件
-Agent 运行时 SHALL 在每次工具调用开始与结束时发出结构化观测事件，至少包含 requestId、sessionId、toolName、startedAt、endedAt、ok、errorCode（若失败）与 latencyMs；入参 MUST 以脱敏摘要形式记录，MUST NOT 完整记录疑似密钥内容。
+
+Agent 运行时 SHALL 在每次工具调用开始与结束时发出结构化观测事件，至少包含 requestId、sessionId、callId、所属轮次、toolName、startedAt、endedAt、ok、errorCode（若失败）与 latencyMs；入参 MUST 以脱敏后的真实内容记录（敏感片段遮罩），结果 MUST 记录工具真实输出（超限时以预览、长度、摘要与外置引用替代），MUST NOT 完整记录疑似密钥内容。观测事件 MUST NOT 因落盘失败而中断工具执行或回复生成。
 
 #### Scenario: 成功调用产生观测
 - **WHEN** 白名单工具执行成功
-- **THEN** 系统记录一条 ok=true 的观测事件，并包含耗时
+- **THEN** 系统记录一条 ok=true 的观测事件，包含耗时与真实输出
 
 #### Scenario: 失败调用产生观测
 - **WHEN** 工具因校验失败或执行异常而失败
 - **THEN** 系统记录 ok=false 与 errorCode，且不中断对观测通道本身的写入
+
+#### Scenario: 观测写入失败不阻断执行
+- **WHEN** 观测落盘通道不可用
+- **THEN** 工具仍照常执行，回复仍正常生成
 
 ### Requirement: 配置驱动工具开关
 系统 SHALL 允许通过本地配置覆盖默认工具的 enabled 状态；配置缺失时 SHALL 使用代码默认值（记忆与提醒工具默认启用）。
@@ -198,11 +201,16 @@ Agent 运行时 SHALL 在每次工具调用开始与结束时发出结构化观�
 - **THEN** 后续对话不再规划或执行该工具，直至重新启用
 
 ### Requirement: 工具规划失败可观测
-当 `planToolCalls` 抛错或返回无效结果时，系统 MUST NOT 静默吞掉失败：MUST 记录观测或向聊天窗发出可理解提示，且 MUST 继续生成不依赖工具的正常回复。
+
+当 `planToolCalls` 抛错或返回无效结果时，系统 MUST NOT 静默吞掉失败：MUST 记录观测或向聊天窗发出可理解提示，且 MUST 继续生成不依赖工具的正常回复。每次规划 MUST 产生一条规划结果事件，至少记录候选工具数、实际规划出的调用，以及被丢弃调用的原因（工具未开放、重复调用、已成功写入过、超出调用预算）。
 
 #### Scenario: 规划失败仍可回复
 - **WHEN** planToolCalls 抛出异常
 - **THEN** 系统不调用任何工具，仍流式返回助手回复，并产生规划失败的可观测信号
+
+#### Scenario: 记录丢弃原因
+- **WHEN** 模型规划出的调用被去重或预算上限过滤
+- **THEN** 规划结果事件中记录被丢弃的调用及原因，可解释该轮为何未执行该工具
 
 ### Requirement: 规划提示覆盖知识库检索
 工具规划指令 SHALL 引导模型在用户询问本地文档、项目说明或已导入资料细节时优先考虑 `search_knowledge`（若该工具已启用），同时保留记忆与提醒类工具的既有规划规则。
@@ -243,3 +251,32 @@ Agent 每次模型调用 SHALL 在现有 persona（或默认系统提示）基�
 #### Scenario: 普通对话不触发
 - **WHEN** 用户普通闲聊且未引用更早对话
 - **THEN** 规划提示不诱导调用 search_history
+
+### Requirement: 模型调用与节点执行可观测
+
+每次模型调用（流式回复、工具规划、摘要等）MUST 产生配对的可观测事件，至少记录提供方与模型名、调用类型、开始与结束时刻、耗时、首字延迟（流式）、结束原因与 token 用量（provider 未提供时标记为估算）。每个图节点（normalize/recall/plan/toolBoundary/maybeReplan/model/commit）执行 MUST 产生节点级起止事件与耗时，使单轮链路的耗时构成可分解。模型请求信封 MUST 记录请求侧可复现的信息（模型、消息条数、提示词长度与摘要、可用工具名列表），MUST NOT 记录凭据。
+
+#### Scenario: 单轮耗时可分解
+- **WHEN** 一轮对话完成
+- **THEN** 链路可看出各节点与各次模型调用各自耗时，而非只有整轮总耗时
+
+#### Scenario: 记录 token 用量
+- **WHEN** 模型调用返回用量信息
+- **THEN** 对应事件记录输入、输出、缓存读与推理 token，并可在轮次结束时聚合
+
+#### Scenario: 取消的模型调用
+- **WHEN** 用户在一次流式模型调用过程中取消
+- **THEN** 该调用事件以取消终态收尾，且记录已产生的部分输出与已知用量
+
+### Requirement: 检索与技能路由可观测
+
+检索类操作（长期记忆召回、知识库检索、历史会话检索、技能规则注入）MUST 产生可观测事件，至少记录查询文本（遮罩后）、检索来源、返回条目数、耗时与命中条目的标识与分数，使「模型看到了哪些片段」可复盘。检索无命中时 MUST 记录明确的空结果，MUST NOT 伪造命中。
+
+#### Scenario: 知识库检索命中
+- **WHEN** 一轮对话调用了知识库检索并命中片段
+- **THEN** 链路中出现检索事件，含查询、命中数量、各命中片段标识与分数
+
+#### Scenario: 检索无命中
+- **WHEN** 检索未返回任何片段
+- **THEN** 链路记录空结果事件，且模型回复不得声称引用了不存在的来源
+

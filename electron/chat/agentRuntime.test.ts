@@ -95,7 +95,7 @@ describe('AgentRuntime', () => {
     const stream = vi.fn<AgentProvider['stream']>(async (messages, _config, _signal, onToken) => {
       const reply = `回复:${messages.at(-1)?.content}`
       onToken(reply)
-      return reply
+      return { text: reply }
     })
     const tools = new ToolRegistry()
     const runtime = new AgentRuntime({ stream }, tools)
@@ -169,7 +169,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_messages, _config, _signal, onToken) => {
           onToken('记下了')
-          return '记下了'
+          return { text: '记下了' }
         },
       },
       tools,
@@ -217,7 +217,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_m, _c, _s, onToken) => {
           onToken('ok')
-          return 'ok'
+          return { text: 'ok' }
         },
       },
       tools,
@@ -261,7 +261,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_m, _c, _s, onToken) => {
           onToken('已取消')
-          return '已取消'
+          return { text: '已取消' }
         },
       },
       tools,
@@ -318,7 +318,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_m, _c, _s, onToken) => {
           onToken('完成')
-          return '完成'
+          return { text: '完成' }
         },
         planToolCalls: async () => {
           planRound += 1
@@ -538,7 +538,7 @@ describe('AgentRuntime', () => {
         stream: async (_m, _c, _s, onToken, systemPrompt) => {
           capturedSystem = systemPrompt ?? ''
           onToken('答')
-          return '答'
+          return { text: '答' }
         },
         planToolCalls: async () => {
           planRound += 1
@@ -596,7 +596,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_m, _c, _s, onToken) => {
           onToken('好')
-          return '好'
+          return { text: '好' }
         },
         planToolCalls: async (_messages, _config, _signal, systemPrompt) => {
           planRound += 1
@@ -641,7 +641,7 @@ describe('AgentRuntime', () => {
         stream: async (_m, _c, _s, onToken, systemPrompt) => {
           capturedSystem = systemPrompt ?? ''
           onToken('已取消')
-          return '已取消'
+          return { text: '已取消' }
         },
       },
       tools,
@@ -680,7 +680,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_m, _c, _s, onToken) => {
           onToken('好')
-          return '好'
+          return { text: '好' }
         },
         planToolCalls: async () => {
           planRound += 1
@@ -711,7 +711,7 @@ describe('AgentRuntime', () => {
       {
         stream: async (_messages, _config, _signal, onToken) => {
           onToken('你好呀')
-          return '你好呀'
+          return { text: '你好呀' }
         },
       },
       new ToolRegistry(),

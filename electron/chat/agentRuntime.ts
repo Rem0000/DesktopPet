@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import type {
   AgentTool,
   ChatMessage,
   ProviderRuntimeConfig,
+  ToolRiskLevel,
 } from '../../src/chat/contracts'
 import {
   ContextUsageTracker,
@@ -17,6 +19,13 @@ import { classifyToolError, summarizeToolInput } from './redact'
 import type { ToolRegistry } from './toolRegistry'
 import type { SkillRouter } from './skills/types'
 import type { ChatProvider, GuardConfig } from '../../src/chat/contracts'
+import type {
+  TraceDroppedReason,
+  TraceRetrievalHit,
+  TraceRetrievalSource,
+  TraceStepNode,
+} from '../../src/trace/contracts'
+import type { TraceRecorder } from '../trace/traceRecorder'
 
 /**
  * AgentRuntime 消费的最小 Provider 接口：从 ChatProvider 泛化而来，
@@ -33,16 +42,24 @@ export type ToolBoundaryEvent =
   | {
       phase: 'start'
       toolName: string
+      /** 本轮内唯一调用标识（运行时生成，供链路追踪关联 call/result） */
+      callId?: string
+      riskLevel?: ToolRiskLevel
       inputSummary: string
+      /** 脱敏前的原始入参（链路追踪据此记录真实参数） */
+      input?: unknown
     }
   | {
       phase: 'end'
       toolName: string
+      callId?: string
       ok: boolean
       errorCode?: string
       errorMessage?: string
       latencyMs: number
       inputSummary: string
+      input?: unknown
+      /** 工具真实输出（链路追踪据此记录真实结果） */
       output?: unknown
     }
 
@@ -222,6 +239,58 @@ function withSourceSession(input: unknown, sessionId: string): unknown {
   return { ...record, sourceSessionId: sessionId }
 }
 
+/** 检索类工具 → 链路追踪的检索来源标记 */
+const RETRIEVAL_TOOL_SOURCES: Record<string, TraceRetrievalSource> = {
+  search_knowledge: 'knowledge',
+  search_history: 'history',
+}
+
+/**
+ * 从检索工具的返回值中提取命中条目，供链路追踪记录「模型看到了哪些片段」。
+ * 只读取已经算出的分数（稀疏/向量/融合/重排），不做任何额外计算。
+ */
+export function retrievalHitsFromOutput(
+  output: unknown,
+  source: TraceRetrievalSource,
+): TraceRetrievalHit[] {
+  if (!output || typeof output !== 'object') return []
+  const hits = (output as { hits?: unknown }).hits
+  if (!Array.isArray(hits)) return []
+  const mapped: TraceRetrievalHit[] = []
+  hits.forEach((hit, index) => {
+    if (!hit || typeof hit !== 'object') return
+    const value = hit as Record<string, unknown>
+    const identifier = [
+      value.documentId,
+      value.chunkId,
+      value.sessionId,
+      value.messageId,
+      value.id,
+    ].find((candidate): candidate is string => typeof candidate === 'string')
+    const recallSource =
+      value.recallSource === 'sparse' ||
+      value.recallSource === 'vector' ||
+      value.recallSource === 'both'
+        ? value.recallSource
+        : undefined
+    mapped.push({
+      id: identifier ?? `${source}-${index}`,
+      score: typeof value.score === 'number' ? value.score : undefined,
+      sparseScore: typeof value.sparseScore === 'number' ? value.sparseScore : undefined,
+      vectorScore: typeof value.vectorScore === 'number' ? value.vectorScore : undefined,
+      rerankScore: typeof value.rerankScore === 'number' ? value.rerankScore : undefined,
+      recallSource,
+      title:
+        typeof value.title === 'string'
+          ? value.title
+          : typeof value.content === 'string'
+            ? value.content.slice(0, 80)
+            : undefined,
+    })
+  })
+  return mapped
+}
+
 function emitPlanFailure(
   onToolEvent: ((event: ToolBoundaryEvent) => void) | undefined,
   message: string,
@@ -368,19 +437,30 @@ export class AgentRuntime {
     onToolEvent?: (event: ToolBoundaryEvent) => void
     /** riskLevel=confirm 时调用；未提供或返回 false 则不执行 */
     confirmTool?: (toolName: string, rawInput: unknown) => Promise<boolean>
+    /** 链路追踪记录器；缺省时不产生任何观测事件 */
+    trace?: TraceRecorder | null
   }): Promise<string> {
     const memory = this.memory
     const tools = this.tools
     const budget = this.contextBudget
     const provider = this.provider
     const onToolEvent = input.onToolEvent
+    const trace = input.trace ?? null
     /** 本轮组装观测（recall/model/plan 各节点累加后统一写入 tracker） */
     const usage = emptyContextSectionBreakdown()
     let finalSystemPrompt = ''
 
+    /** 把图节点包成链路追踪 span（未开启追踪时零开销） */
+    const wrap = <R>(
+      node: TraceStepNode,
+      fn: (state: typeof AgentState.State) => Promise<R>,
+    ) =>
+      async (state: typeof AgentState.State): Promise<R> =>
+        trace ? trace.span(node, () => fn(state)) : fn(state)
+
     const planPending = async (
       state: typeof AgentState.State,
-      options: { includeToolResults: boolean },
+      options: { includeToolResults: boolean; round: number },
     ): Promise<PendingToolCall[]> => {
       let registered = tools.listForPlanning()
       if (this.planToolFilter) {
@@ -406,42 +486,113 @@ export class AgentRuntime {
           : '\n\n【可遗忘记忆列表】当前为空；用户要求忘记时不要调用 forget_memory。'
       // 工具目录占用（供上下文占用拆分）：规划提示里工具定义 + 遗忘列表
       usage.systemToolsCharacters = JSON.stringify(registered.map((tool) => tool.parameters)).length
+      const plannerPrompt = `${state.systemPrompt || DEFAULT_SYSTEM_PROMPT}${toolNote}${memoryNote}`
+      trace?.requestHeader({
+        kind: 'plan',
+        providerKind: input.config.providerKind ?? 'deepseek',
+        model: input.config.plannerModel || input.config.model,
+        systemPrompt: plannerPrompt,
+        messageCount: state.messages.length,
+        messageCharacters: state.messages.reduce(
+          (sum, message) => sum + message.content.length,
+          0,
+        ),
+        tools: registered.map((tool) => tool.name),
+      })
+      trace?.modelCall({
+        kind: 'plan',
+        providerKind: input.config.providerKind ?? 'deepseek',
+        model: input.config.plannerModel || input.config.model,
+        streaming: false,
+      })
+      const planStarted = Date.now()
       try {
         const planned = await provider.planToolCalls(
           state.messages,
           input.config,
           input.signal,
-          `${state.systemPrompt || DEFAULT_SYSTEM_PROMPT}${toolNote}${memoryNote}`,
+          plannerPrompt,
           [...registered],
         )
+        trace?.modelResult({
+          kind: 'plan',
+          model: input.config.plannerModel || input.config.model,
+          ok: true,
+          latencyMs: Date.now() - planStarted,
+          finishReason: planned.finishReason,
+          usage: planned.usage,
+        })
         const allowed = new Set(registered.map((tool) => tool.name))
-        let pendingToolCalls = planned.toolCalls
-          .filter((call) => allowed.has(call.name))
-          .map((call) => ({
+        /** 被丢弃的调用及原因，供链路追踪解释「为什么没调这个工具」 */
+        const dropped: Array<{ name: string; reason: TraceDroppedReason }> = []
+        const accepted: PendingToolCall[] = []
+        for (const call of planned.toolCalls) {
+          if (!allowed.has(call.name)) {
+            dropped.push({ name: call.name, reason: 'not_allowed' })
+            continue
+          }
+          accepted.push({
             name: call.name,
             input: withSourceSession(call.input, state.sessionId),
-          }))
-        pendingToolCalls = dedupePendingToolCalls(pendingToolCalls)
+          })
+        }
+        let pendingToolCalls = dedupePendingToolCalls(accepted)
+        for (const call of accepted) {
+          if (!pendingToolCalls.includes(call)) {
+            dropped.push({ name: call.name, reason: 'duplicate' })
+          }
+        }
         if (options.includeToolResults) {
-          pendingToolCalls = filterAlreadySucceededCalls(
+          const filtered = filterAlreadySucceededCalls(
             pendingToolCalls,
             state.toolResults ?? [],
           )
+          for (const call of pendingToolCalls) {
+            if (!filtered.includes(call)) {
+              dropped.push({ name: call.name, reason: 'already_succeeded' })
+            }
+          }
+          pendingToolCalls = filtered
         }
-        return pendingToolCalls.slice(0, Math.min(3, remaining))
+        const limited = pendingToolCalls.slice(0, Math.min(3, remaining))
+        for (const call of pendingToolCalls.slice(limited.length)) {
+          dropped.push({ name: call.name, reason: 'over_budget' })
+        }
+        trace?.planResult({
+          round: options.round,
+          candidates: registered.length,
+          planned: limited,
+          dropped,
+        })
+        return limited
       } catch (error) {
         const message = error instanceof Error ? error.message : '工具规划失败'
+        trace?.modelResult({
+          kind: 'plan',
+          model: input.config.plannerModel || input.config.model,
+          ok: false,
+          latencyMs: Date.now() - planStarted,
+          errorCode: input.signal.aborted ? 'cancelled' : 'plan_failed',
+          message,
+        })
+        trace?.planResult({
+          round: options.round,
+          candidates: registered.length,
+          planned: [],
+          dropped: [],
+          failed: message,
+        })
         emitPlanFailure(onToolEvent, message)
         return []
       }
     }
 
     const graph = new StateGraph(AgentState)
-      .addNode('normalize', async (state) => ({
+      .addNode('normalize', wrap('normalize', async (state) => ({
         allMessages: state.messages,
         messages: trimContext(state.messages, budget, this.trimOptions),
-      }))
-      .addNode('recall', async (state) => {
+      })))
+      .addNode('recall', wrap('recall', async (state) => {
         const query =
           [...state.messages].reverse().find((message) => message.role === 'user')
             ?.content ?? ''
@@ -451,6 +602,7 @@ export class AgentRuntime {
           systemPrompt = DEFAULT_SYSTEM_PROMPT
         } else {
           // 会话摘要基于裁剪前完整历史（allMessages），可见窗口由 assemble 内部按预算裁剪
+          const recallStarted = Date.now()
           const assembled = await memory.assemble({
             sessionId: state.sessionId,
             packageId: input.packageId,
@@ -463,9 +615,24 @@ export class AgentRuntime {
           systemPrompt = assembled.systemPrompt
           recentMessages = assembled.recentMessages
           usage.memoryCharacters = assembled.memoryCharacters ?? 0
+          trace?.retrievalHits({
+            source: 'memory',
+            query,
+            latencyMs: Date.now() - recallStarted,
+            hits: assembled.recalledItems.map((item) => ({
+              id: item.id,
+              score: (item as { score?: number }).score,
+              title: item.content.slice(0, 80),
+            })),
+          })
         }
         if (this.skillRouter) {
           const hit = await this.skillRouter.route(query, input.signal)
+          trace?.skillRoute({
+            hit: hit !== null,
+            skillId: hit?.skill.id,
+            rulesCharacters: hit?.rulesText.length,
+          })
           if (hit) {
             usage.skillsCharacters = hit.rulesText.length
             systemPrompt = `${systemPrompt}\n\n${hit.rulesText}`
@@ -481,15 +648,18 @@ export class AgentRuntime {
         return recentMessages
           ? { messages: recentMessages, systemPrompt }
           : { systemPrompt }
-      })
-      .addNode('plan', async (state) => {
+      }))
+      .addNode('plan', wrap('plan', async (state) => {
         if ((state.pendingToolCalls?.length ?? 0) > 0) {
           return { pendingToolCalls: state.pendingToolCalls }
         }
-        const pendingToolCalls = await planPending(state, { includeToolResults: false })
+        const pendingToolCalls = await planPending(state, {
+          includeToolResults: false,
+          round: 1,
+        })
         return { pendingToolCalls }
-      })
-      .addNode('toolBoundary', async (state) => {
+      }))
+      .addNode('toolBoundary', wrap('toolBoundary', async (state) => {
         const pending = state.pendingToolCalls ?? []
         if (pending.length === 0) {
           return {
@@ -507,6 +677,8 @@ export class AgentRuntime {
           executed += 1
           executedNames.push(call.name)
           const inputSummary = summarizeToolInput(call.input)
+          const callId = `call_${randomUUID()}`
+          const riskLevel = tools.getRiskLevel(call.name) ?? 'safe'
           const tool = tools.get(call.name)
           if (!tool) {
             const errorCode = 'not_found'
@@ -514,16 +686,29 @@ export class AgentRuntime {
             onToolEvent?.({
               phase: 'start',
               toolName: call.name,
+              callId,
+              riskLevel,
               inputSummary,
+              input: call.input,
             })
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,
+              callId,
               ok: false,
               errorCode,
               errorMessage,
               latencyMs: 0,
               inputSummary,
+              input: call.input,
+            })
+            trace?.toolResult({
+              callId,
+              name: call.name,
+              ok: false,
+              latencyMs: 0,
+              errorCode,
+              message: errorMessage,
             })
             results.push(JSON.stringify({ tool: call.name, ok: false, error: errorMessage }))
             continue
@@ -534,25 +719,47 @@ export class AgentRuntime {
             onToolEvent?.({
               phase: 'start',
               toolName: call.name,
+              callId,
+              riskLevel,
               inputSummary,
+              input: call.input,
             })
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,
+              callId,
               ok: false,
               errorCode,
               errorMessage,
               latencyMs: 0,
               inputSummary,
+              input: call.input,
+            })
+            trace?.toolResult({
+              callId,
+              name: call.name,
+              ok: false,
+              latencyMs: 0,
+              errorCode,
+              message: errorMessage,
             })
             results.push(JSON.stringify({ tool: call.name, ok: false, error: errorMessage }))
             continue
           }
 
+          trace?.toolCall({ callId, name: call.name, riskLevel, args: call.input })
+
           if (tools.getRiskLevel(call.name) === 'confirm') {
+            const confirmStarted = Date.now()
             const confirmed = input.confirmTool
               ? await input.confirmTool(call.name, call.input)
               : false
+            trace?.toolConfirm({
+              callId,
+              name: call.name,
+              decision: confirmed ? 'approved' : 'denied',
+              waitedMs: Date.now() - confirmStarted,
+            })
             if (!confirmed) {
               const errorCode = 'cancelled'
               const errorMessage =
@@ -562,16 +769,29 @@ export class AgentRuntime {
               onToolEvent?.({
                 phase: 'start',
                 toolName: call.name,
+                callId,
+                riskLevel,
                 inputSummary,
+                input: call.input,
               })
               onToolEvent?.({
                 phase: 'end',
                 toolName: call.name,
+                callId,
                 ok: false,
                 errorCode,
                 errorMessage,
                 latencyMs: 0,
                 inputSummary,
+                input: call.input,
+              })
+              trace?.toolResult({
+                callId,
+                name: call.name,
+                ok: false,
+                latencyMs: 0,
+                errorCode,
+                message: errorMessage,
               })
               results.push(
                 JSON.stringify({
@@ -589,7 +809,10 @@ export class AgentRuntime {
           onToolEvent?.({
             phase: 'start',
             toolName: call.name,
+            callId,
+            riskLevel,
             inputSummary,
+            input: call.input,
           })
           const started = Date.now()
           try {
@@ -601,11 +824,31 @@ export class AgentRuntime {
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,
+              callId,
               ok: true,
               latencyMs,
               inputSummary,
+              input: call.input,
               output,
             })
+            trace?.toolResult({
+              callId,
+              name: call.name,
+              ok: true,
+              latencyMs,
+              output,
+            })
+            const retrievalSource = RETRIEVAL_TOOL_SOURCES[call.name]
+            if (retrievalSource) {
+              const hits = retrievalHitsFromOutput(output, retrievalSource)
+              trace?.retrievalHits({
+                source: retrievalSource,
+                query: String((call.input as { query?: unknown })?.query ?? ''),
+                topK: (call.input as { topK?: number })?.topK,
+                latencyMs,
+                hits,
+              })
+            }
             results.push(JSON.stringify({ tool: call.name, ok: true, output }))
           } catch (error) {
             const latencyMs = Date.now() - started
@@ -613,11 +856,21 @@ export class AgentRuntime {
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,
+              callId,
               ok: false,
               errorCode: classified.errorCode,
               errorMessage: classified.message,
               latencyMs,
               inputSummary,
+              input: call.input,
+            })
+            trace?.toolResult({
+              callId,
+              name: call.name,
+              ok: false,
+              latencyMs,
+              errorCode: classified.errorCode,
+              message: classified.message,
             })
             results.push(
               JSON.stringify({
@@ -637,8 +890,8 @@ export class AgentRuntime {
           lastRoundHadTools: true,
           lastRoundShouldReplan: executedNames.some((name) => REPLAN_TRIGGER_TOOLS.has(name)),
         }
-      })
-      .addNode('maybeReplan', async (state) => {
+      }))
+      .addNode('maybeReplan', wrap('maybeReplan', async (state) => {
         if (!state.lastRoundHadTools || !state.lastRoundShouldReplan) {
           return { pendingToolCalls: [] as PendingToolCall[], lastRoundShouldReplan: false }
         }
@@ -648,14 +901,17 @@ export class AgentRuntime {
         if ((state.totalToolCalls ?? 0) >= MAX_TOOL_CALLS) {
           return { pendingToolCalls: [] as PendingToolCall[], lastRoundShouldReplan: false }
         }
-        const pendingToolCalls = await planPending(state, { includeToolResults: true })
+        const pendingToolCalls = await planPending(state, {
+          includeToolResults: true,
+          round: 2,
+        })
         return {
           pendingToolCalls,
           lastRoundHadTools: false,
           lastRoundShouldReplan: false,
         }
-      })
-      .addNode('model', async (state) => {
+      }))
+      .addNode('model', wrap('model', async (state) => {
         const systemPrompt = state.systemPrompt || DEFAULT_SYSTEM_PROMPT
         const toolNote = formatToolResultsForModel(
           state.toolResults ?? [],
@@ -703,17 +959,73 @@ export class AgentRuntime {
             `[context-debug] wrote to data/logs/context-debug.log at ${new Date().toISOString()}`,
           )
         }
-        return {
-          reply: await provider.stream(
+        trace?.requestContext({
+          budgetCharacters: budget,
+          parts: {
+            systemPrompt: observation.systemPromptCharacters,
+            systemTools: observation.systemToolsCharacters,
+            skills: observation.skillsCharacters,
+            memory: observation.memoryCharacters,
+            messages: observation.messagesCharacters,
+          },
+        })
+        trace?.requestHeader({
+          kind: 'reply',
+          providerKind: input.config.providerKind ?? 'deepseek',
+          model: input.config.model,
+          systemPrompt: finalPrompt,
+          messageCount: state.messages.length,
+          messageCharacters: observation.messagesCharacters,
+          tools: tools.listForPlanning().map((tool) => tool.name),
+        })
+        trace?.modelCall({
+          kind: 'reply',
+          providerKind: input.config.providerKind ?? 'deepseek',
+          model: input.config.model,
+          streaming: true,
+        })
+        const callStarted = Date.now()
+        let firstTokenAt: number | undefined
+        try {
+          const result = await provider.stream(
             state.messages,
             input.config,
             input.signal,
-            input.onToken,
+            (token) => {
+              firstTokenAt ??= Date.now()
+              input.onToken(token)
+            },
             finalPrompt,
-          ),
+          )
+          const reply = result.text
+          trace?.modelResult({
+            kind: 'reply',
+            model: input.config.model,
+            ok: true,
+            latencyMs: Date.now() - callStarted,
+            ttftMs:
+              result.ttftMs ??
+              (firstTokenAt === undefined ? undefined : firstTokenAt - callStarted),
+            finishReason: result.finishReason,
+            usage: result.usage,
+            characters: reply.length,
+          })
+          return { reply }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          trace?.modelResult({
+            kind: 'reply',
+            model: input.config.model,
+            ok: false,
+            latencyMs: Date.now() - callStarted,
+            ttftMs: firstTokenAt === undefined ? undefined : firstTokenAt - callStarted,
+            errorCode: input.signal.aborted ? 'cancelled' : 'model_error',
+            message,
+          })
+          throw error
         }
-      })
-      .addNode('commit', async (state) => ({ reply: state.reply }))
+      }))
+      .addNode('commit', wrap('commit', async (state) => ({ reply: state.reply })))
       .addEdge(START, 'normalize')
       .addEdge('normalize', 'recall')
       .addEdge('recall', 'plan')

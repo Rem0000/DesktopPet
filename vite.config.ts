@@ -41,6 +41,7 @@ export default defineConfig({
         manager: path.resolve(__dirname, 'manager.html'),
         chat: path.resolve(__dirname, 'chat.html'),
         novel: path.resolve(__dirname, 'novel.html'),
+        trace: path.resolve(__dirname, 'trace.html'),
       },
     },
     commonjsOptions: {

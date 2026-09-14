@@ -1,5 +1,6 @@
-import { dialog, ipcMain, safeStorage } from 'electron'
+import { dialog, ipcMain, safeStorage, webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
 import type {
   MemoryUpdateInput,
   MemoryWriteInput,
@@ -11,7 +12,12 @@ import type {
   SpeechBubblePayload,
   ToolConfirmRequest,
 } from '../../src/chat/contracts'
-import { resolveDataSubpath, ensureDataDirs, resolveSkillsRoot } from '../projectPaths'
+import {
+  resolveDataSubpath,
+  ensureDataDirs,
+  resolveSkillsRoot,
+  resolveTracePaths,
+} from '../projectPaths'
 import {
   ensureEmbeddingModelLoaded,
   getEmbeddingModelStatus,
@@ -31,7 +37,7 @@ import { MemoryStore } from './memoryStore'
 import { DailyMeetStore } from './dailyMeetStore'
 import { loadToolConfigOverrides, saveToolConfigOverrides } from './toolConfig'
 import { loadContextConfig } from './contextConfig'
-import { breakdownToUsage, ContextUsageTracker } from './contextUsage'
+import { breakdownToUsage, ContextUsageTracker, projectionToUsage } from './contextUsage'
 import { loadGuardConfig } from './guardConfig'
 import { EpisodeDistiller } from './episodeDistiller'
 import { loadEpisodeConfig } from './episodeConfig'
@@ -44,6 +50,15 @@ import { registerTavilyTools } from './tavilyTools'
 import { summarizeToolInput } from './redact'
 import { defaultToolRegistry } from './toolRegistry'
 import { ToolTraceStore } from './toolTraceStore'
+import { loadTraceConfig } from '../trace/traceConfig'
+import { TraceStore } from '../trace/traceStore'
+import type { TraceTurnStarter } from '../trace/traceRecorder'
+import type {
+  TraceEvent,
+  TraceEventType,
+  TraceLiveEvent,
+  TraceReadOptions,
+} from '../../src/trace/contracts'
 import { SkillRegistry } from './skills/skillRegistry'
 import { createSkillRouter } from './skills/skillRouter'
 import { createReadSkillFileTool } from './skills/skillFileTool'
@@ -224,6 +239,30 @@ function requireReminderCreate(value: unknown): ReminderCreateInput {
   }
 }
 
+/** 链路读取选项：宽松但受限（分页上限、只接受已知事件类型） */
+function requireTraceReadOptions(value: unknown): TraceReadOptions {
+  if (!value || typeof value !== 'object') return {}
+  const input = value as Record<string, unknown>
+  const options: TraceReadOptions = {}
+  if (typeof input.offset === 'number' && Number.isFinite(input.offset)) {
+    options.offset = Math.max(0, Math.floor(input.offset))
+  }
+  if (typeof input.limit === 'number' && Number.isFinite(input.limit)) {
+    options.limit = Math.min(5_000, Math.max(1, Math.floor(input.limit)))
+  }
+  if (Array.isArray(input.turns)) {
+    options.turns = input.turns.filter(
+      (turn): turn is number => typeof turn === 'number' && Number.isFinite(turn),
+    )
+  }
+  if (Array.isArray(input.types)) {
+    options.types = input.types.filter(
+      (type): type is TraceEventType => typeof type === 'string',
+    )
+  }
+  return options
+}
+
 export async function initializeChatController(
   onPetState: (state: PetAgentState) => void,
 ): Promise<ChatService> {
@@ -261,8 +300,9 @@ export async function initializeChatController(
   relationshipService.registerDefaultTools()
   const relationshipEvaluator = new RelationshipEvaluator(
     relationshipStore,
-    (system, user, config, signal) =>
-      provider.completeText(system, user, config, signal),
+    // 后台 LLM 调用（关系演化）不在本次链路追踪范围内，仅取文本；用量在此显式丢弃
+    async (system, user, config, signal) =>
+      (await provider.completeText(system, user, config, signal)).text,
   )
   relationshipEvaluatorRef = relationshipEvaluator
   initializeRelationshipController(relationshipService)
@@ -270,7 +310,9 @@ export async function initializeChatController(
   const memoryService = new MemoryService(
     memoryStore,
     defaultToolRegistry,
-    (messages, config, signal) => provider.summarize(messages, config, signal),
+    // 会话摘要属后台 LLM 调用，同样不在链路追踪范围内
+    async (messages, config, signal) =>
+      (await provider.summarize(messages, config, signal)).text,
     readPackagePersona,
     (packageId) => relationshipService.readState(packageId),
     {
@@ -345,14 +387,48 @@ export async function initializeChatController(
   const { budgetCharacters, importanceTrim, recentWindowChars } =
     await loadContextConfig(configDir)
 
-  const traceStore = new ToolTraceStore(tracesDir)
+  // 链路追踪：会话级事件流（data/traces/sessions）+ 启动时修复被中断的轮次
+  const traceConfig = await loadTraceConfig(configDir)
+  /** 追踪台实时订阅者（webContents id）；发送时顺手清理已销毁窗口 */
+  const traceSubscribers = new Set<number>()
+  const broadcastTrace = (sessionId: string, event: TraceEvent): void => {
+    for (const id of [...traceSubscribers]) {
+      const target = webContents.fromId(id)
+      if (!target || target.isDestroyed()) {
+        traceSubscribers.delete(id)
+        continue
+      }
+      target.send('traces:live', { sessionId, event } satisfies TraceLiveEvent)
+    }
+  }
+  const traceLog = new TraceStore(resolveTracePaths(), traceConfig, broadcastTrace)
+  void traceLog.repairInterrupted().catch(() => undefined)
+
+  // 工具调用兼容层：读取改由链路日志折叠投影（并双读 legacy 旧日报）
+  const traceStore = new ToolTraceStore(tracesDir, traceLog)
   await traceStore.initialize()
+  void traceStore.migrateLegacyDayFiles().catch(() => undefined)
+
+  const beginTrace: TraceTurnStarter = (input) =>
+    traceLog.beginTurn({
+      sessionId: input.sessionId,
+      packageId: input.packageId,
+      turn: input.turn,
+      provider: input.provider,
+      context: { budgetCharacters, importanceTrim, recentWindowChars },
+      tools: defaultToolRegistry.listMeta().map((meta) => ({
+        name: meta.name,
+        enabled: meta.enabled,
+        riskLevel: meta.riskLevel,
+      })),
+    })
 
   const episodeConfig = await loadEpisodeConfig(configDir)
   const episodeDistiller = new EpisodeDistiller(
     memoryStore,
-    (system, user, config, signal) =>
-      provider.completeText(system, user, config, signal),
+    // episode 抽取同为后台 LLM 调用，不在链路追踪范围内
+    async (system, user, config, signal) =>
+      (await provider.completeText(system, user, config, signal)).text,
     episodeConfig,
   )
 
@@ -384,7 +460,6 @@ export async function initializeChatController(
     runtime,
     onPetState,
     () => resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
-    traceStore,
     (options) => {
       const evaluator = relationshipEvaluatorRef
       const config = store.getRuntimeProviderConfig()
@@ -435,6 +510,7 @@ export async function initializeChatController(
           if (activeEpisodeController === episodeController) activeEpisodeController = null
         })
     },
+    beginTrace,
   )
 
   ipcMain.handle('chat:config:get', () => store.getProviderConfig())
@@ -459,15 +535,20 @@ export async function initializeChatController(
     if (deleted) {
       await memoryStore.deleteSessionSummary(sessionId)
       contextUsageTrackerRef?.deleteSession(sessionId)
+      // 会话删除连带清理链路日志（保留策略之外的用户显式删除）
+      await traceLog.deleteSession(sessionId)
     }
     return deleted
   })
   ipcMain.handle('chat:active-package-id', () =>
     resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null),
   )
-  ipcMain.handle('chat:context:usage', (_event, rawSessionId: unknown) => {
+  ipcMain.handle('chat:context:usage', async (_event, rawSessionId: unknown) => {
     const sessionId = typeof rawSessionId === 'string' ? rawSessionId.trim() : ''
     if (!sessionId) return breakdownToUsage(undefined, budgetCharacters)
+    // 真值来自链路日志投影（按次落盘，可查历史轮次）；内存 tracker 仅作快路径缓存
+    const projected = await traceLog.contextPressure(sessionId).catch(() => null)
+    if (projected?.observed) return projectionToUsage(projected)
     const observation = contextUsageTracker.get(
       sessionId,
       resolvePackageIdFromDir(getActiveLive2DDir?.() ?? null) ?? undefined,
@@ -564,6 +645,44 @@ export async function initializeChatController(
     traceStore.listBySession(requireId(rawSessionId, '会话标识')),
   )
   ipcMain.handle('tools:traces:stats', () => traceStore.summarize())
+
+  // 链路追踪台：只读查询 + 实时推送 + 导出 + 保留清理
+  ipcMain.handle('traces:list-sessions', () => traceLog.listSessions())
+  ipcMain.handle('traces:read-session', (_event, rawId: unknown, rawOptions: unknown) =>
+    traceLog.readSession(requireId(rawId, '会话标识'), requireTraceReadOptions(rawOptions)),
+  )
+  ipcMain.handle('traces:session-summary', (_event, rawId: unknown) =>
+    traceLog.summarizeSession(requireId(rawId, '会话标识')),
+  )
+  ipcMain.handle('traces:live-subscribe', (event) => {
+    traceSubscribers.add(event.sender.id)
+    event.sender.once('destroyed', () => traceSubscribers.delete(event.sender.id))
+    return { ok: true as const }
+  })
+  ipcMain.handle('traces:live-unsubscribe', (event) => {
+    traceSubscribers.delete(event.sender.id)
+    return { ok: true as const }
+  })
+  ipcMain.handle('traces:export', async (_event, rawId: unknown, rawFormat: unknown) => {
+    const sessionId = requireId(rawId, '会话标识')
+    const format = rawFormat === 'markdown' ? 'markdown' : 'json'
+    const content = await traceLog.exportSession(sessionId, format)
+    if (content === null) return { canceled: false, error: '会话链路不存在' }
+    const extension = format === 'json' ? 'json' : 'md'
+    const result = await dialog.showSaveDialog({
+      title: '导出链路追踪',
+      defaultPath: `trace-${sessionId.slice(0, 8)}.${extension}`,
+      filters: [
+        format === 'json'
+          ? { name: 'JSON', extensions: ['json'] }
+          : { name: 'Markdown', extensions: ['md'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await writeFile(result.filePath, content, 'utf8')
+    return { canceled: false, filePath: result.filePath }
+  })
+  ipcMain.handle('traces:gc', () => traceLog.collectGarbage())
 
   ipcMain.handle('knowledge:list', () =>
     knowledgeStore.listDocuments().map((item) => ({

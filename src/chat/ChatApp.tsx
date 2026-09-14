@@ -24,6 +24,8 @@ import {
   type ToolTimelineItem,
 } from './toolTraceHydration'
 import { MarkdownView } from './MarkdownView'
+import { formatUsage } from '../trace/format'
+import type { TokenUsage, TraceSessionSummary } from '../trace/contracts'
 
 const DEFAULT_CONFIG: ProviderPublicConfig = {
   baseUrl: 'https://api.deepseek.com',
@@ -123,6 +125,10 @@ export function ChatApp() {
   const [notice, setNotice] = useState('')
   const [initializing, setInitializing] = useState(true)
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
+  /** 链路投影：会话累计用量摘要 */
+  const [usageSummary, setUsageSummary] = useState<TraceSessionSummary | null>(null)
+  /** 链路投影：最近一轮 token 用量（来自 complete 事件） */
+  const [turnUsage, setTurnUsage] = useState<TokenUsage | null>(null)
   const [toolTimelines, setToolTimelines] = useState<Record<string, ToolTimelineItem[]>>({})
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({})
   const [expandedCitations, setExpandedCitations] = useState<Record<string, boolean>>({})
@@ -191,6 +197,15 @@ export function ChatApp() {
     }
   }, [])
 
+  /** 读取链路投影的会话累计用量（token 计数；不涉及金额换算） */
+  const refreshUsage = useCallback(async (sessionId: string) => {
+    try {
+      setUsageSummary(await window.petAPI.traces.sessionSummary(sessionId))
+    } catch {
+      setUsageSummary(null)
+    }
+  }, [])
+
   const openSession = useCallback(async (sessionId: string) => {
     const next = await window.petAPI.chat.getSession(sessionId)
     if (!next) return
@@ -198,6 +213,8 @@ export function ChatApp() {
     setSession(next)
     currentSessionIdRef.current = sessionId
     void refreshContextUsage(sessionId)
+    setTurnUsage(null)
+    void refreshUsage(sessionId)
     // 切换会话时只保留目标会话自身的进行中请求标记，清除其余残留，
     // 避免历史会话的 activeRequests 泄漏导致输入框被 disabled 卡住。
     setActiveRequests((current) => {
@@ -359,6 +376,7 @@ export function ChatApp() {
               errorCode: event.errorCode,
               latencyMs: event.latencyMs,
               inputSummary: event.inputSummary,
+              outputPreview: event.outputPreview,
               hitCount:
                 event.toolName === 'search_knowledge'
                   ? (event.citations?.length ?? 0)
@@ -414,6 +432,8 @@ export function ChatApp() {
         // 仅当完成的事件属于当前展示会话时才刷新其上下文占用，避免后台会话完成覆盖当前展示
         if (event.type === 'complete' && currentSessionIdRef.current === event.sessionId) {
           void refreshContextUsage(event.sessionId)
+          setTurnUsage(event.usage ?? null)
+          void refreshUsage(event.sessionId)
         }
       }
     }
@@ -790,6 +810,16 @@ export function ChatApp() {
                 >
                   📚 知识库
                 </button>
+                <button
+                  type="button"
+                  className="sidebar-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void window.petAPI.traces.openConsole()
+                  }}
+                >
+                  🔍 链路追踪台
+                </button>
               </div>
             )}
           </div>
@@ -958,6 +988,18 @@ export function ChatApp() {
             usage={contextUsage}
             onRefresh={() => session && void refreshContextUsage(session.id)}
           />
+        )}
+        {(turnUsage || usageSummary) && (
+          <div className="usage-chip" title="token 用量（来自链路投影，只呈现计数）">
+            {turnUsage && <span>本轮 {formatUsage(turnUsage)}</span>}
+            {usageSummary && (
+              <span>
+                会话累计 in {usageSummary.usage.inputTokens} · out{' '}
+                {usageSummary.usage.outputTokens}
+                {usageSummary.usage.estimated ? '（估算）' : ''}
+              </span>
+            )}
+          </div>
         )}
       </section>
 
@@ -1299,6 +1341,12 @@ function ToolTimeline(props: {
               )}
               {item.inputSummary && (
                 <code title={item.inputSummary}>{item.inputSummary}</code>
+              )}
+              {item.phase === 'end' && item.outputPreview && (
+                <details className="tool-output">
+                  <summary>结果</summary>
+                  <pre>{item.outputPreview}</pre>
+                </details>
               )}
             </li>
           ))}

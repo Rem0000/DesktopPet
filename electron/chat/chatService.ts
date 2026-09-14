@@ -6,14 +6,14 @@ import type {
   PetAgentState,
   SendChatInput,
   SendChatResult,
-  ToolTraceRecord,
 } from '../../src/chat/contracts'
 import type { AgentRuntime, ToolBoundaryEvent } from './agentRuntime'
 import type { ChatStore } from './chatStore'
 import { normalizeProviderError } from './deepSeekProvider'
 import { citationsFromToolOutput } from './knowledgeService'
 import { scoreMessageImportance } from './messageImportance'
-import type { ToolTraceStore } from './toolTraceStore'
+import { summarizeToolInput } from './redact'
+import type { TraceRecorder, TraceTurnStarter } from '../trace/traceRecorder'
 
 export type ChatEventSink = {
   id: number
@@ -24,6 +24,8 @@ export type ChatEventSink = {
 type ActiveRequest = {
   requestId: string
   sessionId: string
+  userMessageId: string
+  userText: string
   assistantMessageId: string
   sender: ChatEventSink
   controller: AbortController
@@ -52,11 +54,12 @@ export class ChatService {
     private readonly runtime: AgentRuntime,
     private readonly onPetState: (state: PetAgentState) => void,
     private readonly getActivePackageId: () => string | null = () => null,
-    private readonly traces?: ToolTraceStore,
     private readonly onChatComplete?: (options: {
       packageId: string
       messages: ChatMessage[]
     }) => void,
+    /** 开启一轮链路追踪（缺省时不产生链路日志） */
+    private readonly beginTrace?: TraceTurnStarter,
   ) {}
 
   async send(input: SendChatInput, sender: ChatEventSink): Promise<SendChatResult> {
@@ -103,6 +106,8 @@ export class ChatService {
     const active: ActiveRequest = {
       requestId,
       sessionId,
+      userMessageId: userMessage.id,
+      userText: text,
       assistantMessageId: assistantMessage.id,
       sender,
       controller: new AbortController(),
@@ -160,40 +165,45 @@ export class ChatService {
       errorCode: event.errorCode,
       latencyMs: event.latencyMs,
       inputSummary: event.inputSummary,
+      outputPreview:
+        event.output === undefined ? undefined : summarizeToolInput(event.output, 400),
       citations:
         event.ok && event.toolName === 'search_knowledge'
           ? citationsFromToolOutput(event.output)
           : undefined,
     })
-
-    const startedAt = new Date(Date.now() - event.latencyMs).toISOString()
-    const record: ToolTraceRecord = {
-      requestId: active.requestId,
-      sessionId: active.sessionId,
-      messageId: active.assistantMessageId,
-      toolName: event.toolName,
-      startedAt,
-      endedAt: new Date().toISOString(),
-      ok: event.ok,
-      errorCode: event.errorCode,
-      latencyMs: event.latencyMs,
-      inputSummary: event.inputSummary,
-      citations:
-        event.ok && event.toolName === 'search_knowledge'
-          ? citationsFromToolOutput(event.output)
-          : undefined,
-    }
-    void this.traces?.append(record)
   }
 
   private async execute(active: ActiveRequest): Promise<void> {
     let content = ''
     let startedSpeaking = false
     let hasToolSuccess = false
+    const turnStarted = Date.now()
+    let recorder: TraceRecorder | null = null
     try {
       const session = this.store.getSession(active.sessionId)
       const config = this.store.getRuntimeProviderConfig()
       if (!session || !config) throw new Error('聊天运行配置已失效')
+
+      // 链路追踪：轮次序号 = 会话内用户消息条数（含本条）
+      const turn = session.messages.filter((message) => message.role === 'user').length
+      recorder =
+        (await this.beginTrace?.({
+          sessionId: active.sessionId,
+          packageId: session.packageId,
+          turn,
+          provider: {
+            kind: config.providerKind ?? 'deepseek',
+            baseUrl: config.baseUrl,
+            model: config.model,
+            plannerModel: config.plannerModel,
+          },
+        })) ?? null
+      recorder?.turnStart(active.userMessageId, active.requestId)
+      recorder?.userMessage({
+        messageId: active.userMessageId,
+        content: active.userText,
+      })
 
       const reply = await this.runtime.run({
         sessionId: active.sessionId,
@@ -222,6 +232,7 @@ export class ChatService {
         confirmTool: active.sender.confirmTool
           ? (toolName, rawInput) => active.sender.confirmTool!(toolName, rawInput)
           : undefined,
+        trace: recorder,
       })
       content = content || reply
       if (!content) throw new Error('DeepSeek 返回了空回复')
@@ -234,11 +245,20 @@ export class ChatService {
           importance: scoreMessageImportance(content, 'assistant', { hasToolSuccess }),
         },
       )
+      recorder?.assistantMessage({
+        messageId: active.assistantMessageId,
+        content,
+      })
+      recorder?.turnEnd({
+        status: 'completed',
+        latencyMs: Date.now() - turnStarted,
+      })
       active.sender.send({
         type: 'complete',
         requestId: active.requestId,
         sessionId: active.sessionId,
         message,
+        usage: recorder?.getTurnUsage(),
       })
       // 对话完成后触发关系演化评估（非阻塞；失败不影响聊天）
       const finalSession = this.store.getSession(active.sessionId)
@@ -251,6 +271,12 @@ export class ChatService {
         ? ({ code: 'cancelled', message: '已停止生成', retryable: true } satisfies ChatError)
         : normalizeProviderError(error)
       const status = normalized.code === 'cancelled' ? 'cancelled' : 'error'
+      recorder?.turnEnd({
+        status,
+        latencyMs: Date.now() - turnStarted,
+        errorCode: normalized.code,
+        message: normalized.message,
+      })
       const message = await this.store.updateMessage(
         active.sessionId,
         active.assistantMessageId,
