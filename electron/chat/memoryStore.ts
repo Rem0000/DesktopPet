@@ -11,6 +11,9 @@ import type {
   MemoryWriteInput,
   SessionMemorySummary,
 } from '../../src/chat/contracts'
+import { validateDataPath } from '../security/pathValidator'
+import { validateContent } from '../security/inputValidator'
+import { auditFileAccess } from '../security/fileAccessAudit'
 
 const STORE_VERSION = 1
 const MAX_ITEMS = 500
@@ -47,16 +50,14 @@ function normalizeLoadedItem(item: MemoryItem): MemoryItem {
   return next
 }
 
-const SENSITIVE_PATTERN =
-  /(api[_-]?key|sk-[a-z0-9]{10,}|password|passwd|secret|token|bearer\s+[a-z0-9._-]+)/i
-
 export function assertSafeMemoryContent(content: string): void {
-  const trimmed = content.trim()
-  if (!trimmed) throw new Error('记忆内容不能为空')
-  if (trimmed.length > 2_000) throw new Error('单条记忆不能超过 2000 个字符')
-  if (SENSITIVE_PATTERN.test(trimmed)) {
-    throw new Error('拒绝写入疑似密钥或敏感机密内容')
-  }
+  // Layer 2: 使用增强的内容验证
+  validateContent(content, {
+    minLength: 1,
+    maxLength: 2_000,
+    allowSensitive: false,
+    fieldName: '记忆内容',
+  })
 }
 
 function normalizeKey(key: string | undefined, type: MemoryType): string | undefined {
@@ -85,6 +86,15 @@ export class MemoryStore {
 
   constructor(storageDirectory: string) {
     this.dataPath = path.join(storageDirectory, 'memory-data.json')
+
+    // Layer 1: 验证路径在 memory 区域内
+    try {
+      validateDataPath(this.dataPath, 'memory')
+    } catch (error) {
+      console.warn('[MemoryStore] Path validation warning:', error)
+      // 继续使用原路径以保持兼容性
+    }
+
     this.vectorIndex = new MemoryVectorIndex(storageDirectory)
   }
 
@@ -326,7 +336,30 @@ export class MemoryStore {
   }
 
   private async persist(): Promise<void> {
-    await atomicWriteTextFile(this.dataPath, JSON.stringify(this.database, null, 2))
+    // Layer 3: 审计文件写入
+    const startTime = Date.now()
+    let success = false
+    let errorMessage: string | undefined
+
+    try {
+      await atomicWriteTextFile(this.dataPath, JSON.stringify(this.database, null, 2))
+      success = true
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error)
+      throw error
+    } finally {
+      await auditFileAccess({
+        operation: 'write',
+        filePath: 'data/memory/memory-data.json',
+        toolName: 'memory_store',
+        success,
+        errorMessage,
+        latencyMs: Date.now() - startTime,
+        fileSize: success ? JSON.stringify(this.database).length : undefined,
+      }).catch(() => {
+        // 审计失败不影响主流程
+      })
+    }
   }
 
   private async ensureVectorConsistency(): Promise<void> {

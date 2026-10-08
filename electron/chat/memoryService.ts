@@ -19,6 +19,7 @@ import { assertSafeMemoryContent } from './memoryStore'
 import type { ToolRegistry } from './toolRegistry'
 import { markUntrustedBlock } from './untrustedContent'
 import type { GuardConfig } from '../../src/chat/contracts'
+import { validateContent, validateNumber, requireFields } from '../security/inputValidator'
 
 export type AssembledContext = {
   systemPrompt: string
@@ -271,18 +272,41 @@ export class MemoryService {
           additionalProperties: false,
         },
         validate: (input: unknown) => {
-          if (!input || typeof input !== 'object') throw new Error('参数无效')
-          const value = input as Record<string, unknown>
-          if (typeof value.content !== 'string' || typeof value.key !== 'string') {
-            throw new Error('update_profile 需要 key 与 content')
-          }
+          // Layer 2: 增强的输入验证
+          const value = requireFields<{
+            key: string
+            content: string
+            importance?: number
+          }>(input, ['key', 'content'])
+
+          const key = validateContent(value.key, {
+            maxLength: 120,
+            fieldName: '画像键',
+          })
+
+          const content = validateContent(value.content, {
+            minLength: 1,
+            maxLength: 2_000,
+            allowSensitive: false,
+            fieldName: '画像内容',
+          })
+
+          const importance = value.importance
+            ? validateNumber(value.importance, {
+                min: 1,
+                max: 3,
+                integer: true,
+                fieldName: '重要性',
+              })
+            : undefined
+
           return {
-            content: value.content,
-            key: value.key,
-            importance: value.importance as MemoryImportance | undefined,
+            content,
+            key,
+            importance: importance as MemoryImportance | undefined,
             sourceSessionId:
-              typeof value.sourceSessionId === 'string'
-                ? value.sourceSessionId
+              typeof (value as Record<string, unknown>).sourceSessionId === 'string'
+                ? ((value as Record<string, unknown>).sourceSessionId as string)
                 : undefined,
           }
         },
@@ -319,21 +343,46 @@ export class MemoryService {
           additionalProperties: false,
         },
         validate: (input: unknown) => {
-          if (!input || typeof input !== 'object') throw new Error('参数无效')
-          const value = input as Record<string, unknown>
-          if (typeof value.content !== 'string') {
-            throw new Error('remember_fact 需要 content')
-          }
+          // Layer 2: 增强的输入验证
+          const value = requireFields<{
+            content: string
+            key?: string
+            importance?: number
+            expiresAt?: string
+          }>(input, ['content'])
+
+          const content = validateContent(value.content, {
+            minLength: 1,
+            maxLength: 2_000,
+            allowSensitive: false,
+            fieldName: '事实内容',
+          })
+
+          const key = value.key
+            ? validateContent(value.key, {
+                maxLength: 120,
+                fieldName: '事实键',
+              })
+            : undefined
+
+          const importance = value.importance
+            ? validateNumber(value.importance, {
+                min: 1,
+                max: 3,
+                integer: true,
+                fieldName: '重要性',
+              })
+            : undefined
+
           return {
-            content: value.content,
-            key: typeof value.key === 'string' ? value.key : undefined,
-            importance: value.importance as MemoryImportance | undefined,
+            content,
+            key,
+            importance: importance as MemoryImportance | undefined,
             sourceSessionId:
-              typeof value.sourceSessionId === 'string'
-                ? value.sourceSessionId
+              typeof (value as Record<string, unknown>).sourceSessionId === 'string'
+                ? ((value as Record<string, unknown>).sourceSessionId as string)
                 : undefined,
-            expiresAt:
-              typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
+            expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
           }
         },
         execute: async (

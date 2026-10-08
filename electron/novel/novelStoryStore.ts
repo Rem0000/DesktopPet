@@ -22,6 +22,8 @@ import type {
   StateDiff,
   TimelineEvent,
 } from '../../src/novel/contracts'
+import { validateUUID } from '../security/pathValidator'
+import { auditFileAccess } from '../security/fileAccessAudit'
 
 const META_FILE = 'meta.json'
 const OUTLINE_FILE = 'outline.json'
@@ -62,8 +64,31 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
 }
 
 async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true })
-  await atomicWriteTextFile(filePath, `${JSON.stringify(value, null, 2)}\n`)
+  // Layer 3: 审计文件写入
+  const startTime = Date.now()
+  let success = false
+  let errorMessage: string | undefined
+
+  try {
+    await mkdir(path.dirname(filePath), { recursive: true })
+    await atomicWriteTextFile(filePath, `${JSON.stringify(value, null, 2)}\n`)
+    success = true
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : String(error)
+    throw error
+  } finally {
+    await auditFileAccess({
+      operation: 'write',
+      filePath: filePath.replace(/\\/g, '/'),
+      toolName: 'novel_store',
+      success,
+      errorMessage,
+      latencyMs: Date.now() - startTime,
+      fileSize: success ? JSON.stringify(value).length : undefined,
+    }).catch(() => {
+      // 审计失败不影响主流程
+    })
+  }
 }
 
 function chapterFileName(chapterNumber: number): string {
@@ -117,11 +142,12 @@ export class NovelStoryStore {
   }
 
   private assertBookId(bookId: string): string {
-    const id = bookId.trim()
-    if (!id || id.includes('..') || id.includes('/') || id.includes('\\')) {
-      throw new Error('无效的书籍标识')
+    // Layer 1 & 2: 使用 UUID 验证
+    try {
+      return validateUUID(bookId.trim())
+    } catch {
+      throw new Error('无效的书籍标识：必须是有效的 UUID 格式')
     }
-    return id
   }
 
   async listBooks(): Promise<BookShelfItem[]> {

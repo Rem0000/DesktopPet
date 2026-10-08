@@ -26,6 +26,7 @@ import type {
   TraceStepNode,
 } from '../../src/trace/contracts'
 import type { TraceRecorder } from '../trace/traceRecorder'
+import { auditFileAccess } from '../security/fileAccessAudit'
 
 /**
  * AgentRuntime 消费的最小 Provider 接口：从 ChatProvider 泛化而来，
@@ -821,6 +822,34 @@ export class AgentRuntime {
               packageId: input.packageId,
             })
             const latencyMs = Date.now() - started
+
+            // Layer 3: 审计工具执行（成功）
+            const filePathMap: Record<string, string> = {
+              remember_fact: 'data/memory/memory-data.json',
+              update_profile: 'data/memory/memory-data.json',
+              forget_memory: 'data/memory/memory-data.json',
+              search_knowledge: 'data/knowledge/index.json',
+              schedule_reminder: 'data/reminders/reminders.json',
+              cancel_reminder: 'data/reminders/reminders.json',
+            }
+            const filePath = filePathMap[call.name]
+            if (filePath) {
+              auditFileAccess({
+                operation: call.name.includes('forget') || call.name.includes('cancel')
+                  ? 'delete'
+                  : call.name.includes('search')
+                    ? 'read'
+                    : 'write',
+                filePath,
+                toolName: call.name,
+                success: true,
+                latencyMs,
+                sessionId: state.sessionId,
+              }).catch(() => {
+                // 审计失败不影响主流程
+              })
+            }
+
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,
@@ -853,6 +882,35 @@ export class AgentRuntime {
           } catch (error) {
             const latencyMs = Date.now() - started
             const classified = classifyToolError(error)
+
+            // Layer 3: 审计工具执行（失败）
+            const filePathMap: Record<string, string> = {
+              remember_fact: 'data/memory/memory-data.json',
+              update_profile: 'data/memory/memory-data.json',
+              forget_memory: 'data/memory/memory-data.json',
+              search_knowledge: 'data/knowledge/index.json',
+              schedule_reminder: 'data/reminders/reminders.json',
+              cancel_reminder: 'data/reminders/reminders.json',
+            }
+            const filePath = filePathMap[call.name]
+            if (filePath) {
+              auditFileAccess({
+                operation: call.name.includes('forget') || call.name.includes('cancel')
+                  ? 'delete'
+                  : call.name.includes('search')
+                    ? 'read'
+                    : 'write',
+                filePath,
+                toolName: call.name,
+                success: false,
+                errorMessage: classified.message,
+                latencyMs,
+                sessionId: state.sessionId,
+              }).catch(() => {
+                // 审计失败不影响主流程
+              })
+            }
+
             onToolEvent?.({
               phase: 'end',
               toolName: call.name,

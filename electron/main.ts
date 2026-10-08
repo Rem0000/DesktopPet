@@ -39,6 +39,7 @@ import {
 import type { ChatService } from './chat/chatService'
 import { initializeNovelController } from './novel/novelController'
 import { ensureDataDirs, resolveDataSubpath } from './projectPaths'
+import { initializeSecurity } from './security'
 
 registerPetAssetScheme()
 
@@ -736,6 +737,10 @@ app.whenReady().then(async () => {
   installPetAssetHandler()
   registerIpc()
   await ensureDataDirs()
+
+  // Layer 3: 初始化安全审计系统
+  await initializeSecurity()
+
   app.setPath('logs', resolveDataSubpath('logs'))
   chatService = await initializeChatController((state) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
